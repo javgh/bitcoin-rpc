@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
-
 module Network.BitcoinRPC
     ( errorCodeInvalidTransactionID
+    , getBlockCountR
+    , module Network.BitcoinRPC.Types
     )
     where
 
@@ -21,165 +22,22 @@ import qualified Data.Attoparsec as AP
 import qualified Data.HashMap.Strict as H
 import qualified Data.Text as T
 
+import Network.BitcoinRPC.Types
+
 errorCodeInvalidTransactionID :: Integer
 errorCodeInvalidTransactionID = -5
 
-newtype BitcoinAmount = BitcoinAmount { btcAmount :: Integer }
-                        deriving (Eq,Show,Read)
+debugAuth = RPCAuth "http://127.0.0.1:8332" "rpcuser" "localaccessonly"
 
-newtype BitcoinAddress = BitcoinAddress { btcAddress :: T.Text }
-                         deriving (Eq,Show,Read)
+ioTry :: IO a -> IO (Either E.IOException a)
+ioTry = E.try
 
-newtype TransactionID = TransactionID { btcTxID :: T.Text }
-                        deriving (Eq,Show,Read)
-
-data RPCAuth = RPCAuth { rpcUrl :: String
-                       , rpcUser :: String
-                       , rpcPassword :: String
-                       }
-                       deriving (Show)
-
-data Transaction = ReceiveTx { tEntry :: Integer
-                             , tAmount :: BitcoinAmount
-                             , tAddress :: BitcoinAddress
-                             , tConfirmations :: Integer
-                             , tTxid :: TransactionID
-                             , tTime :: Integer
-                             }
-                 | SendTx { tEntry :: Integer
-                          , tAmount :: BitcoinAmount
-                          , tAddress :: BitcoinAddress
-                          , tFee :: BitcoinAmount
-                          , tConfirmations :: Integer
-                          , tTxid :: TransactionID
-                          , tTime :: Integer
-                          }
-                 | MoveTx { tTime :: Integer }
-                 | GenerateTx { tEntry :: Integer
-                              , tAmount :: BitcoinAmount
-                              , tConfirmations :: Integer
-                              , tTxid :: TransactionID
-                              , tTime :: Integer
-                              }
-                 deriving (Eq,Show,Read)
-
-
-data TransactionHeader = TransactionHeader { thAmount :: BitcoinAmount
-                                           , thConfirmations :: Integer
-                                           , thTxid :: TransactionID
-                                           , thTime :: Integer
-                                           }
-                         deriving (Show)
-
-data TransactionOrigins = TransactionOrigins { toConfirmations :: Integer
-                                             , toTxid :: TransactionID
-                                             , toTime :: Integer
-                                             , toOrigins :: [BitcoinAddress]
-                                             }
-                          deriving (Show)
-
-data BlockCount = BlockCount { bcCount :: Integer }
-                  deriving (Show)
-
-data RPCResult = RPCSuccess Value
-               | RPCError { rpcErrorCode :: Integer
-                          , rpcErrorMessage :: T.Text
-                          }
-               deriving (Show)
-
-instance Num BitcoinAmount
-  where
-    (+) (BitcoinAmount x) (BitcoinAmount y) = BitcoinAmount (x + y)
-    (*) (BitcoinAmount x) (BitcoinAmount y) = error "not supported"
-    (-) (BitcoinAmount x) (BitcoinAmount y) = BitcoinAmount (x - y)
-    abs (BitcoinAmount x) = BitcoinAmount (abs x)
-    signum (BitcoinAmount x) = BitcoinAmount (signum x)
-    fromInteger x = BitcoinAmount (fromInteger x)
-
-instance FromJSON BitcoinAmount
-  where
-    parseJSON v = do
-        amount <- parseJSON v :: Parser Double
-        let inSatoshis = round $ amount * 10^8
-        return $ BitcoinAmount inSatoshis
-
-instance FromJSON BitcoinAddress
-  where
-    parseJSON (String addr) = return $ BitcoinAddress addr
-    parseJSON _ = mzero
-
-instance FromJSON TransactionID
-  where
-    parseJSON (String txid) = return $ TransactionID txid
-    parseJSON _ = mzero
-
-instance FromJSON Transaction
-  where
-    parseJSON (Object o) = case H.lookup "category" o of
-        Just "send" -> SendTx <$>
-                            o .: "entry" <*>
-                            (abs <$> o .: "amount") <*>
-                            o .: "address" <*>
-                            o .: "fee" <*>
-                            o .: "confirmations" <*>
-                            o .: "txid" <*>
-                            o .: "time"
-        Just "receive" -> ReceiveTx <$>
-                            o .: "entry" <*>
-                            o .: "amount" <*>
-                            o .: "address" <*>
-                            o .: "confirmations" <*>
-                            o .: "txid" <*>
-                            o .: "time"
-        Just "move" -> MoveTx <$>
-                            o .: "time"
-        Just "generate" -> GenerateTx <$>
-                            o .: "entry" <*>
-                            o .: "amount" <*>
-                            o .: "confirmations" <*>
-                            o .: "txid" <*>
-                            o .: "time"
-        Just _ -> mzero
-        Nothing -> mzero
-    parseJSON _ = mzero
-
-instance FromJSON TransactionHeader
-  where
-    parseJSON (Object o) = TransactionHeader <$>
-                            o .: "amount" <*>
-                            o .: "confirmations" <*>
-                            o .: "txid" <*>
-                            o .: "time"
-    parseJSON _ = mzero
-
-instance FromJSON TransactionOrigins
-  where
-    parseJSON (Object o) = TransactionOrigins <$>
-                            o .: "confirmations" <*>
-                            o .: "txid" <*>
-                            o .: "time" <*>
-                            o .: "origins"
-    parseJSON _ = mzero
-
-instance FromJSON BlockCount
-  where
-    parseJSON v@(Number _) = BlockCount <$> parseJSON v
-    parseJSON _ = mzero
-
-instance FromJSON RPCResult
-  where
-    parseJSON (Object o) = case H.lookup "result" o of
-        Just Null -> case H.lookup "error" o of
-            Just (Object errInfo) -> RPCError <$> errInfo .: "code"
-                                              <*> errInfo .: "message"
-            Just Null -> mzero
-            _ -> mzero
-        Just result -> return $ RPCSuccess result
-        _ -> mzero
-    parseJSON _ = mzero
-
-reliableApiCall :: IO (Either String a) -> IO a
-reliableApiCall f = watchdog $ watch f
+reliableApiCall :: Maybe WatchdogLogger -> IO (Either String a) -> IO a
+reliableApiCall mLogger f = watchdog $ do
+    case mLogger of
+        Just logger -> setLoggingAction logger
+        Nothing -> return ()
+    watch f
 
 -- | Make a call to the Bitcoin daemon, expecting that there will
 --   be no RPC error. Network and other parse errors are signaled by a 'Left'
@@ -253,7 +111,11 @@ compileRequest uri body =
             , rqBody = body
             }
 
-ioTry :: IO a -> IO (Either E.IOException a)
-ioTry = E.try
-
-debugAuth = RPCAuth "http://127.0.0.1:8332" "rpcuser" "localaccessonly"
+getBlockCountR :: Maybe WatchdogLogger -> RPCAuth -> IO Integer
+getBlockCountR mLogger auth = do
+    v <- reliableApiCall mLogger $ callApi auth "getblockcount" "[]"
+    let p :: Result Integer
+        p = fromJSON v
+    case p of
+        Success r -> return r
+        Error _ -> error "Unexpected result when calling method getblockcount"

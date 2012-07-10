@@ -11,5 +11,28 @@ cabal-version:       >= 1.8
 
 library
   build-depends: base == 4.*
-  exposed-modules: Network.BitcoinRPC -- , Network.BitcoinRPC.Events
+                 , text == 0.11.*
+                 , unordered-containers == 0.2.*
+                 , aeson == 0.6.*
+                 , attoparsec == 0.10.*
+                 , bytestring == 0.9.*
+                 , network == 2.3.*
+                 , HTTP == 4000.2.*
+                 , watchdog == 0.2.*
+  exposed-modules: Network.BitcoinRPC
+    -- , Network.BitcoinRPC.Events
   ghc-options: -O -Wall
+
+test-suite testsuite
+  type: exitcode-stdio-1.0
+  main-is: TestSuite.hs
+  build-depends: base == 4.*
+                 , text == 0.11.*
+                 , unordered-containers == 0.2.*
+                 , aeson == 0.6.*
+                 , attoparsec == 0.10.*
+                 , bytestring == 0.9.*
+                 , network == 2.3.*
+                 , HTTP == 4000.2.*
+                 , watchdog == 0.2.*
+                 , HUnit == 1.2.*
