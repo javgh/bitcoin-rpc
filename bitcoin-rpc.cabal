@@ -1,0 +1,15 @@
+name:                bitcoin-rpc
+version:             0.1.0.0
+synopsis:            Library to communicate with the Satoshi Bitcoin daemon
+license:             MIT
+license-file:        LICENSE
+author:              Jan Vornberger <jan@uos.de>
+maintainer:          Jan Vornberger <jan@uos.de>
+category:            Network
+build-type:          Simple
+cabal-version:       >= 1.8
+
+library
+  build-depends: base == 4.*
+  exposed-modules: Network.BitcoinRPC -- , Network.BitcoinRPC.Events
+  ghc-options: -O -Wall
