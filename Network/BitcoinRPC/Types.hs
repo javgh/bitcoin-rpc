@@ -7,7 +7,11 @@ module Network.BitcoinRPC.Types
     , Transaction(..)
     , TransactionHeader(..)
     , TransactionOrigins(..)
+    , BitcoinAddressInfo(..)
     , RPCResult(..)
+    , SendError(..)
+    , txidAsByteString
+    , addressAsByteString
     )
     where
 
@@ -15,12 +19,15 @@ import Control.Applicative
 import Control.Monad
 import Data.Aeson
 import Data.Aeson.Types
+import Data.Maybe
 
+import qualified Data.ByteString as B
 import qualified Data.HashMap.Strict as H
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as E
 
 newtype BitcoinAmount = BitcoinAmount { btcAmount :: Integer }
-                        deriving (Eq,Show,Read)
+                        deriving (Eq,Ord,Show,Read)
 
 newtype BitcoinAddress = BitcoinAddress { btcAddress :: T.Text }
                          deriving (Eq,Show,Read)
@@ -73,14 +80,19 @@ data TransactionOrigins = TransactionOrigins { toConfirmations :: Integer
                                              }
                           deriving (Show)
 
---data BlockCount = BlockCount { bcCount :: Integer }
---                  deriving (Show)
-
 data RPCResult = RPCSuccess Value
                | RPCError { rpcErrorCode :: Integer
                           , rpcErrorMessage :: T.Text
                           }
                deriving (Show)
+
+data BitcoinAddressInfo = BitcoinAddressInfo { baiIsValid :: Bool
+                                             , baiIsMine :: Bool
+                                             }
+                                             deriving (Show)
+
+data SendError = InvalidAddress | InsufficientFunds | InvalidAmount | OtherError
+                deriving (Show)
 
 instance Num BitcoinAmount
   where
@@ -156,10 +168,11 @@ instance FromJSON TransactionOrigins
                             o .: "origins"
     parseJSON _ = mzero
 
---instance FromJSON BlockCount
---  where
---    parseJSON v@(Number _) = BlockCount <$> parseJSON v
---    parseJSON _ = mzero
+instance FromJSON BitcoinAddressInfo
+  where
+    parseJSON (Object o) = BitcoinAddressInfo <$>
+                                o .: "isvalid" <*>
+                                (fromMaybe False <$> o .:? "ismine")
 
 instance FromJSON RPCResult
   where
@@ -172,3 +185,9 @@ instance FromJSON RPCResult
         Just result -> return $ RPCSuccess result
         _ -> mzero
     parseJSON _ = mzero
+
+txidAsByteString :: TransactionID -> B.ByteString
+txidAsByteString = E.encodeUtf8 . btcTxID
+
+addressAsByteString :: BitcoinAddress -> B.ByteString
+addressAsByteString = E.encodeUtf8 . btcAddress
