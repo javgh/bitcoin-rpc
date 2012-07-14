@@ -9,6 +9,7 @@ module Network.BitcoinRPC
     , validateAddressR
     , sendToAddress
     , module Network.BitcoinRPC.Types
+    , debugAuth
     )
     where
 
