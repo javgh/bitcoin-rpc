@@ -10,14 +10,14 @@ module Network.BitcoinRPC
     , sendToAddress
     , module Network.BitcoinRPC.Types
     , debugAuth
+    , debugAddr
+    , debugAmount
     )
     where
 
 import Control.Applicative
-import Control.Monad
 import Control.Watchdog
 import Data.Aeson
-import Data.Aeson.Types
 import Data.Maybe
 import Network.Browser
 import Network.HTTP
@@ -28,8 +28,6 @@ import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as B8
 import qualified Control.Exception as E
 import qualified Data.Attoparsec as AP
-import qualified Data.HashMap.Strict as H
-import qualified Data.Text as T
 
 import Network.BitcoinRPC.Types
 
@@ -45,10 +43,13 @@ errorCodeInsufficientFunds = -4
 errorCodeInvalidAmount :: Integer
 errorCodeInvalidAmount = -3
 
+debugAuth :: RPCAuth
 debugAuth = RPCAuth "http://127.0.0.1:8332" "rpcuser" "localaccessonly"
 
+debugAddr :: BitcoinAddress
 debugAddr = BitcoinAddress "19LT33L5fp1eUQK5uJjMMGAgiyrqMjX5ii"
 
+debugAmount :: BitcoinAmount
 debugAmount = BitcoinAmount (10 * 10 ^ (8 :: Integer))
 
 ioTry :: IO a -> IO (Either E.IOException a)
@@ -113,7 +114,7 @@ callApiHelper auth method params = do
         requestPayload = compileRequest uri cmdStr
     result <- ioTry . browse $ do
         setOutHandler $ const (return ())
-        addAuthority authority
+        addAuthority rpcAuthority
         setAllowBasicAuth True
         request requestPayload
     return $ case result of
@@ -125,11 +126,11 @@ callApiHelper auth method params = do
                     (Error e'') -> Left $ "RPC parse error: " ++ e''
                     (Success s) -> Right (s :: RPCResult)
   where
-    authority = AuthBasic { auRealm = "jsonrpc"
-                          , auUsername = rpcUser auth
-                          , auPassword = rpcPassword auth
-                          , auSite = uri
-                          }
+    rpcAuthority = AuthBasic { auRealm = "jsonrpc"
+                             , auUsername = rpcUser auth
+                             , auPassword = rpcPassword auth
+                             , auSite = uri
+                             }
     uri = fromMaybe (error "RPC-URL is malformed") $ parseURI (rpcUrl auth)
     jsonParse = AP.parseOnly json
 
@@ -193,6 +194,7 @@ getBalanceR mLogger auth minconf = do
     v <- reliableApiCall mLogger $ callApi auth "getbalance" params
     parseReply "getbalance" v :: IO BitcoinAmount
 
+validateAddressR :: Maybe WatchdogLogger-> RPCAuth -> BitcoinAddress -> IO BitcoinAddressInfo
 validateAddressR mLogger auth addr = do
     let params = "[\"" `B.append` addressAsByteString addr `B.append` "\"]"
     v <- reliableApiCall mLogger $ callApi auth "validateaddress" params

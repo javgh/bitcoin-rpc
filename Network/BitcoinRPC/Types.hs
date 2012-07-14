@@ -97,7 +97,7 @@ data SendError = InvalidAddress | InsufficientFunds | InvalidAmount | OtherError
 instance Num BitcoinAmount
   where
     (+) (BitcoinAmount x) (BitcoinAmount y) = BitcoinAmount (x + y)
-    (*) (BitcoinAmount x) (BitcoinAmount y) = error "not supported"
+    (*) (BitcoinAmount _) (BitcoinAmount _) = error "not supported"
     (-) (BitcoinAmount x) (BitcoinAmount y) = BitcoinAmount (x - y)
     abs (BitcoinAmount x) = BitcoinAmount (abs x)
     signum (BitcoinAmount x) = BitcoinAmount (signum x)
@@ -107,7 +107,7 @@ instance FromJSON BitcoinAmount
   where
     parseJSON v = do
         amount <- parseJSON v :: Parser Double
-        let inSatoshis = round $ amount * 10^8
+        let inSatoshis = round $ amount * 10 ^ (8 :: Integer)
         return $ BitcoinAmount inSatoshis
 
 instance FromJSON BitcoinAddress
@@ -173,6 +173,7 @@ instance FromJSON BitcoinAddressInfo
     parseJSON (Object o) = BitcoinAddressInfo <$>
                                 o .: "isvalid" <*>
                                 (fromMaybe False <$> o .:? "ismine")
+    parseJSON _ = mzero
 
 instance FromJSON RPCResult
   where

@@ -45,3 +45,4 @@ test-suite testsuite
                  , test-framework == 0.6.*
                  , test-framework-hunit == 0.2.*
                  , test-framework-quickcheck2 == 0.2.*
+  ghc-options: -O -Wall

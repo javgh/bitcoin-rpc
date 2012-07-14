@@ -2,13 +2,13 @@ module Main where
 
 import Control.Concurrent
 import Control.Monad
-import Data.Maybe
 import System.Environment
 import System.Exit
 
 import Network.BitcoinRPC
 import Network.BitcoinRPC.Events
 
+acceptTest :: TransactionHeader -> Bool
 acceptTest txHeader = thConfirmations txHeader >= 3
 
 main :: IO ()

@@ -17,16 +17,16 @@
 module Network.BitcoinRPC.Events
     ( initialEventTaskState
     , bitcoinEventTask
+    , BitcoinEvent(..)
 #if !PRODUCTION
     , LRSCheckpoint(..)
+    , UniqueTransactionID(..)
     , determineNewTransactions
 #endif
     ) where
 
 import Control.Concurrent
 import Control.Exception
-import Control.Monad.Error(ErrorT)
-import Control.Monad.Reader(ReaderT)
 import Control.Watchdog
 import System.Posix.Process
 import System.Posix.Signals
