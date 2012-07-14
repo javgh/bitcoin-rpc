@@ -19,8 +19,10 @@ library
                  , network == 2.3.*
                  , HTTP == 4000.2.*
                  , watchdog == 0.2.*
-  exposed-modules: Network.BitcoinRPC
-    -- , Network.BitcoinRPC.Events
+                 , containers == 0.4.*
+                 , unix == 2.5.*
+                 , mtl == 2.1.*
+  exposed-modules: Network.BitcoinRPC, Network.BitcoinRPC.Events
   ghc-options: -O -Wall
 
 test-suite testsuite

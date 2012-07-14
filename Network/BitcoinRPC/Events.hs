@@ -6,13 +6,19 @@
 -- 2. Listen on the channel for event updates. Every batch of updates
 --    will also include a new state description, which can be passed to
 --    'bitcoinEventTask' when it needs to be restarted.
+--
+-- Note: For every new transaction you are guaranteed to receive a
+-- 'NewTransaction' as well as either a 'TransactionAccepted' or
+-- 'TransactionDisappeared'. Usually you will also receive 'TransactionUpdate'
+-- when the number of confirmations change, but these events might not be
+-- generated if you are catching up from an old state.
 
 {-# LANGUAGE OverloadedStrings, CPP #-}
 module Network.BitcoinRPC.Events
     ( initialEventTaskState
     , bitcoinEventTask
-    , LRSCheckpoint(..)
 #if !PRODUCTION
+    , LRSCheckpoint(..)
     , determineNewTransactions
 #endif
     ) where
@@ -28,9 +34,6 @@ import System.Posix.Signals
 import qualified Data.Map as M
 
 import Network.BitcoinRPC
-
---numberOfConfirmationsNeeded :: Integer
---numberOfConfirmationsNeeded = 6
 
 -- | Number of confirmations until we can be sure, that
 -- the time field of a transaction does not change anymore.
@@ -48,7 +51,7 @@ lrsCheckpointInterval = lrsCheckpointConfirmations * 10 * 60
 data UniqueTransactionID = UniqueTransactionID { uTxID :: TransactionID
                                                , uEntry :: Integer
                                                }
-                           deriving (Eq, Show, Read)
+                           deriving (Eq, Ord, Show, Read)
 
 -- | Keep track on how we need to call 'listreceivedsince' next to get
 -- everything new that happened.
@@ -75,112 +78,67 @@ data BitcoinEvent = NewTransaction { beUTxID :: UniqueTransactionID
                   | TransactionDisappeared { beUTxID :: UniqueTransactionID }
                   deriving (Show)
 
---getEventIdentifier :: Transaction -> EventIdentifier
---getEventIdentifier tx = EventIdentifier (tTxid tx) (tEntry tx)
---
---getNewTransactionEvents :: TransactionEventState -> ErrorT String (ReaderT RPCConfiguration IO) (TransactionEventState, [EventUpdate])
---getNewTransactionEvents (TransactionEventState checkpoint pool) = do
---    (checkpoint', newTxs) <- getNewTransactions checkpoint
---    let newReceiveTxs = filter onlyReceive newTxs
---        pool' = pool ++ map (\tx -> (getEventIdentifier tx, 0)) newReceiveTxs
---    appearingEvents <- mapM augmentNewTransaction newReceiveTxs
---    (pool'', updateEvents) <- updatePool pool'
---    let poolFiltered = filter checkPoolRequirement pool''
---        newState = TransactionEventState checkpoint' poolFiltered
---    return (newState, appearingEvents ++ updateEvents)
---
---augmentNewTransaction :: Transaction -> ErrorT String (ReaderT RPCConfiguration IO) (EventUpdate)
---augmentNewTransaction tx = do
---    let txid = tTxid tx
---        eventIdentifier = getEventIdentifier tx
---    probe <- doRPCRequestFiltered errorCodeInvalidTransactionID (mkGetOriginsCmd txid)
---    case probe of
---        Just txOrigins -> return $ (eventIdentifier, NewTransaction (TransactionWithOrigin tx (toOrigins txOrigins)))
---        Nothing -> return $ (eventIdentifier, NewTransaction (TransactionWithOrigin tx []))
---
---onlyReceive :: Transaction -> Bool
---onlyReceive (ReceiveTx _ _ _ _ _ _) = True
---onlyReceive _ = False
---
----- | Remove transactions from the pool that have either
-----   been completely confirmed or have disappeared.
---checkPoolRequirement :: (t, Integer) -> Bool
---checkPoolRequirement (_, count) = count >= 0 && count <= numberOfConfirmationsNeeded
---
---updatePool :: [EventConfirmationCount] -> ErrorT String (ReaderT RPCConfiguration IO) ([EventConfirmationCount], [EventUpdate])
---    updates <- mapM updatePoolEntry pool
---    let pool' = map fst updates
---        updateEvents = concatMap snd updates
---    return (pool', updateEvents)
---  where
---    updatePoolEntry (eventIdentifier@(EventIdentifier txid _), confirmationCount) = do
---        -- note: this will sometimes make redundant calls to gettransaction,
---        --       but it's easier to implement so I leave it for now
---        probe <- doRPCRequestFiltered errorCodeInvalidTransactionID (mkGetTransactionCmd txid)
---        case probe of
---            Just updatedTx -> do
---                let confirmationCount' = thConfirmations updatedTx
---                    events = createIntermediateEvents eventIdentifier confirmationCount confirmationCount'
---                return ((eventIdentifier, confirmationCount'), map markAcceptedTransactions events)
---            Nothing -> return ((eventIdentifier, -1), [(eventIdentifier, TransactionDisappeared)])
---
---createIntermediateEvents :: t -> Integer -> Integer -> [(t, TransactionEvent)]
---createIntermediateEvents txid start stop =
---    let stop' = min stop numberOfConfirmationsNeeded
---    in if start < stop'
---        then map (\cC -> (txid, TransactionUpdate cC)) $ tail [start..stop']
---        else []
---
---markAcceptedTransactions :: (t, TransactionEvent) -> (t, TransactionEvent)
---markAcceptedTransactions event@(eventIdentifier, TransactionUpdate cC)
---    | cC == numberOfConfirmationsNeeded = (eventIdentifier, TransactionAccepted)
---    | otherwise = event
---markAcceptedTransactions event = event
---
---getNewTransactions :: EventCheckpoint-> BitcoinMonadStack (EventCheckpoint, [Transaction])
---getNewTransactions checkpoint@(EventCheckpoint timestamp _) = do
---    request <- doRPCRequest $ mkListReceivedSinceCmd timestamp
---    return $ processTransactions checkpoint (assertAscending request)
---
---processTransactions :: EventCheckpoint-> [Transaction]-> (EventCheckpoint, [Transaction])
---processTransactions checkpoint [] = (checkpoint, [])
---processTransactions (EventCheckpoint _ knownTxIDs) txList =
---    let newTransactions = filter (\tx -> tTxid tx `notElem` knownTxIDs) txList
---        youngTxs = filter (\tx -> tConfirmations tx < eventCheckPointConfirmations) txList
---        lastTimestamp = tTime (last txList)
---        edgeTxs = filter (\tx -> tTime tx == lastTimestamp) txList   -- edgeTxs can never be empty
---    in if null youngTxs
---            then (EventCheckpoint lastTimestamp (map tTxid edgeTxs), newTransactions)
---            else let firstTimestamp = tTime (head youngTxs)
---                 in (EventCheckpoint firstTimestamp (map tTxid youngTxs), newTransactions)
---
---assertAscending :: [Transaction] -> [Transaction]
---assertAscending [] = []
---assertAscending txList =
---    let times = map tTime txList
---        pairs = zip times (tail times)
---        isAscending = all (uncurry (<=)) pairs
---    in assert isAscending txList
---
-
 initialEventTaskState :: EventTaskState
 initialEventTaskState = EventTaskState { etsLRSCheckpoint =
                                             LRSCheckpoint 0 []
                                        , etsPool = M.empty
                                        }
 
-getNewBitcoinEvents mLogger auth (EventTaskState lrsCheckpoint utxPool) = do
+getUniqueTransactionID :: Transaction -> UniqueTransactionID
+getUniqueTransactionID tx = UniqueTransactionID (tTxid tx) (tEntry tx)
+
+onlyReceive :: Transaction -> Bool
+onlyReceive ReceiveTx{} = True
+onlyReceive _ = False
+
+getNewBitcoinEvents :: Maybe WatchdogLogger-> RPCAuth-> (TransactionHeader -> Bool)-> EventTaskState-> IO (EventTaskState, [BitcoinEvent])
+getNewBitcoinEvents mLogger auth acceptTest (EventTaskState lrsCheckpoint utxPool) = do
     (lrsCheckpoint', newTxs) <- getNewTransactions mLogger auth lrsCheckpoint
-    print lrsCheckpoint'
-    print newTxs
-    return (undefined, undefined)
+    let newReceiveTxs = filter onlyReceive newTxs
+        newPoolEntries = map (\tx -> (getUniqueTransactionID tx, 0)) newReceiveTxs
+        utxPool' = M.union utxPool (M.fromList newPoolEntries)
+    appearingEvents <- mapM (augmentNewTransaction mLogger auth) newReceiveTxs
+    (utxPool'', updateEvents) <- updatePool mLogger auth acceptTest utxPool'
+    let newState = EventTaskState lrsCheckpoint' utxPool''
+    return (newState, appearingEvents ++ updateEvents)
+
+updatePool :: Maybe WatchdogLogger-> RPCAuth-> (TransactionHeader -> Bool)-> M.Map UniqueTransactionID Integer-> IO (M.Map UniqueTransactionID Integer, [BitcoinEvent])
+updatePool mLogger auth acceptTest utxPool = go utxPool (M.toList utxPool)
+  where
+    go pool [] = return (pool, [])
+    go pool ((utxid, confs):entries) = do
+        -- Note: This will sometimes make redundant calls to gettransaction,
+        --       but keeps things a little simpler.
+        probe <- getTransactionR mLogger auth (uTxID utxid)
+        let (pool', events) = checkUpdate acceptTest pool utxid confs probe
+        (pool'', moreEvents) <- go pool' entries
+        return (pool'', events ++ moreEvents)
+
+checkUpdate :: (TransactionHeader -> Bool)-> M.Map UniqueTransactionID Integer-> UniqueTransactionID-> Integer-> Maybe TransactionHeader-> (M.Map UniqueTransactionID Integer, [BitcoinEvent])
+checkUpdate acceptTest pool utxid confs (Just updatedTxHeader)
+    | thConfirmations updatedTxHeader == confs = (pool, [])
+    | otherwise = if acceptTest updatedTxHeader
+                    then (M.delete utxid pool, [TransactionAccepted utxid])
+                    else let updatedConfs = thConfirmations updatedTxHeader
+                         in (M.insert utxid updatedConfs pool,
+                                [TransactionUpdate utxid updatedConfs])
+checkUpdate _ pool utxid _ Nothing =
+    (M.delete utxid pool, [TransactionDisappeared utxid])
+
+augmentNewTransaction :: Maybe WatchdogLogger -> RPCAuth -> Transaction -> IO BitcoinEvent
+augmentNewTransaction mLogger auth tx = do
+    let txid = tTxid tx
+        utxid = getUniqueTransactionID tx
+    probe <- getOriginsR mLogger auth txid
+    return $ case probe of
+        Just txOrigins -> NewTransaction utxid tx (toOrigins txOrigins)
+        Nothing -> NewTransaction utxid tx []
 
 getNewTransactions :: Maybe WatchdogLogger -> RPCAuth -> LRSCheckpoint -> IO (LRSCheckpoint, [Transaction])
 getNewTransactions mLogger auth lrsCheckpoint = do
     txs <- listReceivedSinceR mLogger auth (lrsTimestamp lrsCheckpoint)
     let ascendingTxs = assertAscending txs
     return $ determineNewTransactions lrsCheckpoint ascendingTxs
-  where
 
 -- | Figure out which are actual new transactions and decide on a new
 -- checkpoint. Since timestamps of recent transactions can still change, the
@@ -208,7 +166,7 @@ determineNewTransactions (LRSCheckpoint timestamp knownTxIDs) txList =
                         then tTime (head youngTxs)
                         else safeCandidate
         candidateB = if not (null youngTxs)
-                        then tTime (last youngTxs) - lrsCheckpointConfirmations
+                        then tTime (last youngTxs) - lrsCheckpointInterval
                         else safeCandidate
         candidateBCD = (min (min candidateB candidateC) candidateD) -- earliest
         newTimestamp = max timestamp candidateBCD   -- not earlier than old one
@@ -237,26 +195,28 @@ installSignalHandlers = do
   where
     signalHandler semaphore = putMVar semaphore ()
 
---notifiedPollLoop :: RPCConfiguration -> TransactionEventState -> Chan (TransactionEventState, [EventUpdate]) -> IO b
-notifiedPollLoop semaphore mLogger auth firstState chan = go firstState
+notifiedPollLoop :: MVar ()-> Maybe WatchdogLogger-> RPCAuth-> (TransactionHeader -> Bool)-> EventTaskState-> Chan (EventTaskState, [BitcoinEvent])-> IO ()
+notifiedPollLoop semaphore mLogger auth acceptTest firstState chan = go firstState
   where
     go state = do
         _ <- takeMVar semaphore     -- Will succeed right away the first time,
                                     -- then later only after signals have been
                                     -- received.
-        (state', events) <- getNewBitcoinEvents mLogger auth state
+        (state', events) <- getNewBitcoinEvents mLogger auth acceptTest state
         writeChan chan (state', events)
         go state'
 
---bitcoinEventTask :: RPCConfiguration
---                    -> FilePath     -- ^ PID will be written here to get notifications form Bitcoin daemon
---                    -> TransactionEventState -- ^ state from which to resume
---                    -> Chan (TransactionEventState, [EventUpdate]) -- ^ channel which will receive updates
---                    -> IO b
---bitcoinEventTask connectionConf pidfile state chan = do
---    setupBitcoinNotifcation pidfile
---    notifiedPollLoop connectionConf state chan
-
-bitcoinEventTask mLogger auth pidfile state chan = do
+bitcoinEventTask :: Maybe WatchdogLogger
+                 -> RPCAuth
+                 -> FilePath    -- ^  PID will be written here to get
+                                -- notifications from Bitcoin daemon
+                 -> (TransactionHeader -> Bool)
+                                -- ^ test to decide whether a transaction
+                                -- can be accepted
+                 -> EventTaskState  -- ^ state from which to resume
+                 -> Chan (EventTaskState, [BitcoinEvent])
+                                -- ^ channel which will receive updates
+                 -> IO ()
+bitcoinEventTask mLogger auth pidfile acceptTest state chan = do
     semaphore <- setupBitcoinNotifcation pidfile
-    notifiedPollLoop semaphore mLogger auth state chan
+    notifiedPollLoop semaphore mLogger auth acceptTest state chan

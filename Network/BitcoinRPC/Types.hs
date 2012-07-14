@@ -33,7 +33,7 @@ newtype BitcoinAddress = BitcoinAddress { btcAddress :: T.Text }
                          deriving (Eq,Show,Read)
 
 newtype TransactionID = TransactionID { btcTxID :: T.Text }
-                        deriving (Eq,Show,Read)
+                        deriving (Eq,Ord,Show,Read)
 
 data RPCAuth = RPCAuth { rpcUrl :: String
                        , rpcUser :: String
