@@ -1,10 +1,11 @@
-module EventsTests
-    (
+module Network.BitcoinRPC.EventsTest
+    ( eventsTests
     ) where
 
 import Control.Applicative
 import Data.List
 import Data.Ord
+import Test.Framework.Providers.QuickCheck2
 import Test.QuickCheck
 
 import qualified Data.Text as T
@@ -54,3 +55,7 @@ propNewTransactions txsA txsB =
         knownTxIDs = lrsKnownTxIDs lrsCheckpoint
         (_, newTxs) = determineNewTransactions lrsCheckpoint txs
     in all (\tx -> tTxid tx `notElem` knownTxIDs) newTxs
+
+eventsTests = [ testProperty "timestamp increases" propTimestampIncreases
+              , testProperty "new transactions are returned" propNewTransactions
+              ]

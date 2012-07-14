@@ -37,4 +37,11 @@ test-suite testsuite
                  , network == 2.3.*
                  , HTTP == 4000.2.*
                  , watchdog == 0.2.*
+                 , containers == 0.4.*
+                 , unix == 2.5.*
+                 , mtl == 2.1.*
                  , HUnit == 1.2.*
+                 , QuickCheck == 2.4.*
+                 , test-framework == 0.6.*
+                 , test-framework-hunit == 0.2.*
+                 , test-framework-quickcheck2 == 0.2.*
