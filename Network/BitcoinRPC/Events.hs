@@ -27,6 +27,7 @@ module Network.BitcoinRPC.Events
 
 import Control.Concurrent
 import Control.Exception
+import Control.Monad
 import Control.Watchdog
 import System.Posix.Process
 import System.Posix.Signals
@@ -203,7 +204,8 @@ notifiedPollLoop semaphore mLogger auth acceptTest firstState chan = go firstSta
                                     -- then later only after signals have been
                                     -- received.
         (state', events) <- getNewBitcoinEvents mLogger auth acceptTest state
-        writeChan chan (state', events)
+        when (not (null events)) $
+            writeChan chan (state', events)
         go state'
 
 bitcoinEventTask :: Maybe WatchdogLogger
