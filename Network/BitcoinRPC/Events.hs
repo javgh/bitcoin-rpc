@@ -18,9 +18,9 @@ module Network.BitcoinRPC.Events
     ( initialEventTaskState
     , bitcoinEventTask
     , BitcoinEvent(..)
+    , UniqueTransactionID(..)
 #if !PRODUCTION
     , LRSCheckpoint(..)
-    , UniqueTransactionID(..)
     , determineNewTransactions
 #endif
     ) where

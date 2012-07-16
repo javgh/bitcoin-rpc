@@ -30,7 +30,7 @@ newtype BitcoinAmount = BitcoinAmount { btcAmount :: Integer }
                         deriving (Eq,Ord,Show,Read)
 
 newtype BitcoinAddress = BitcoinAddress { btcAddress :: T.Text }
-                         deriving (Eq,Show,Read)
+                         deriving (Eq,Ord,Show,Read)
 
 newtype TransactionID = TransactionID { btcTxID :: T.Text }
                         deriving (Eq,Ord,Show,Read)
