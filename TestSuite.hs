@@ -8,6 +8,7 @@ import Test.HUnit hiding (Test)
 
 import Network.BitcoinRPC
 import Network.BitcoinRPC.EventsTest
+import Network.BitcoinRPC.MarkerAddressesTest
 
 auth :: RPCAuth
 auth = RPCAuth "http://127.0.0.1:8332" "rpcuser" "localaccessonly"
@@ -100,3 +101,4 @@ tests = [ test1
         , test8
         ] ++
         eventsTests
+        ++ markerAdressesTests

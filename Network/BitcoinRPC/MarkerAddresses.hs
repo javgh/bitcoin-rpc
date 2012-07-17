@@ -1,10 +1,16 @@
+{-# LANGUAGE CPP #-}
 module Network.BitcoinRPC.MarkerAddresses
     ( initMarkerAddressStore
     , processEvents
+#if !PRODUCTION
+    , sumAcceptedMarkerAmounts
+#endif
     ) where
 
+import Data.Function
 import Data.List
 import Data.Maybe
+import Data.Ord
 
 import qualified Data.Map as M
 
@@ -19,8 +25,8 @@ data FilteredBitcoinEvent = FilteredNewTransaction { fntTx :: Transaction
                                                    deriving (Show)
 
 data MarkerAddressDetails = MarkerAddressDetails { madActive :: Bool
-                                                 , madLimit :: Integer
-                                                 , madPendingAmount :: Integer
+                                                 , madLimit :: BitcoinAmount
+                                                 , madPendingAmount :: BitcoinAmount
                                                  }
                             deriving (Show)
 
@@ -44,35 +50,117 @@ data MAStore = MAStore { masConf :: MarkerAddressesConf
                        }
                        deriving (Show)
 
-initMarkerAddressStore :: [(BitcoinAddress, Integer)] -> MAStore
+-- BUG: FilteredNewTransaction are created multiple times
+--      if marker transaction was accepted previously
+-- (write unit test first to expose)
+
+-- TODO: Function to list all pending transactions and their status
+-- TODO: Function to list details about marker addresses (pending amount)
+
+initMarkerAddressStore :: [(BitcoinAddress, BitcoinAmount)] -> MAStore
 initMarkerAddressStore markerAddresses =
     let confList = map transform markerAddresses
-    in MAStore (M.fromList confList) (M.empty)
+    in MAStore (M.fromList confList) M.empty
   where
     transform (addr, limit) = (addr, MarkerAddressDetails True limit 0)
 
--- TODO: process list of PendingMarkerTransactionS
-
 processEvents :: MAStore -> [BitcoinEvent] -> (MAStore, [FilteredBitcoinEvent])
-processEvents store = foldl' updateStore (store, [])
+processEvents store events =
+    let (store', fEventsA) = foldl' updateStore (store, []) events
+        amountList = sumAcceptedMarkerAmounts . listAcceptedMarkerAmounts $ store'
+        store'' = setPendingMarkerAmounts store' amountList
+        (store''', fEventsB) = checkPendingMarkerTransactions store''
+    in (store''', fEventsA ++ fEventsB)
+
+checkPendingMarkerTransactions :: MAStore -> (MAStore, [FilteredBitcoinEvent])
+checkPendingMarkerTransactions store =
+    let txs = M.toList (masPending store)
+    in foldl' checkPendingMarkerTransaction (store, []) txs
+
+checkPendingMarkerTransaction :: (MAStore, [FilteredBitcoinEvent])-> (UniqueTransactionID, PendingTransaction)-> (MAStore, [FilteredBitcoinEvent])
+checkPendingMarkerTransaction (store, fevents) (utxid, pendingTransaction) =
+    case ptStatus pendingTransaction of
+        StandardTransaction -> (store, fevents)
+        AcceptedMarkerTransaction _ -> (store, fevents)
+        PendingMarkerTransaction ma ->
+            let tx = ptTx pendingTransaction
+                amount = tAmount tx
+            in if isWithinLimit store ma amount
+                  then let store' = adjustPendingAmount store ma (+ amount)
+                           pendingTransaction' =
+                              pendingTransaction { ptStatus =
+                                  AcceptedMarkerTransaction ma }
+                           masPending' = M.insert utxid pendingTransaction'
+                                          (masPending store')
+                           confs = ptConfs pendingTransaction
+                           fEvent = FilteredNewTransaction tx confs (Just ma)
+                       in (store' { masPending = masPending' }, fevents ++ [fEvent])
+                  else (store, fevents)
+
+isWithinLimit :: MAStore -> BitcoinAddress -> BitcoinAmount -> Bool
+isWithinLimit store markerAddress amount =
+    case M.lookup markerAddress (masConf store) of
+        Nothing -> False
+        Just details -> madPendingAmount details + amount <= madLimit details
+
+setPendingMarkerAmounts :: MAStore -> [(BitcoinAddress, BitcoinAmount)] -> MAStore
+setPendingMarkerAmounts = foldl' go
+  where
+    go store (ma, amount) = adjustPendingAmount store ma (\_ -> amount)
+
+adjustPendingAmount :: MAStore-> BitcoinAddress -> (BitcoinAmount -> BitcoinAmount) -> MAStore
+adjustPendingAmount store ma f =
+    let mDetails = M.lookup ma (masConf store)
+    in case mDetails of
+        Nothing -> store
+        Just details ->
+            let pendingAmount = madPendingAmount details
+                details' = details { madPendingAmount = f pendingAmount }
+                masConf' = M.insert ma details' (masConf store)
+            in store { masConf = masConf' }
+
+listAcceptedMarkerAmounts :: MAStore -> [(BitcoinAddress, BitcoinAmount)]
+listAcceptedMarkerAmounts store =
+    concatMap extract $ M.toList (masPending store)
+  where
+    extract (_, pendingTransaction) =
+        case ptStatus pendingTransaction of
+            StandardTransaction -> []
+            PendingMarkerTransaction _ -> []
+            AcceptedMarkerTransaction ma ->
+                [(ma, tAmount (ptTx pendingTransaction))]
+
+sumAcceptedMarkerAmounts :: [(BitcoinAddress, BitcoinAmount)] -> [(BitcoinAddress, BitcoinAmount)]
+sumAcceptedMarkerAmounts =
+    map (foldl1' sumAmounts) .  filter (not . null) .
+        groupBy ((==) `on` fst) . sortBy (comparing fst)
+  where
+    sumAmounts :: (BitcoinAddress, BitcoinAmount) -> (BitcoinAddress, BitcoinAmount) -> (BitcoinAddress, BitcoinAmount)
+    sumAmounts (ma1, x) (ma2, y) =
+        if ma1 == ma2
+            then (ma1, x + y)
+            else error ("Implementation error: Expected to be summing"
+                       ++ " data for the same marker address.")
+
+
 
 -- TODO: write HUnit tests for updateStore
 
 updateStore :: (MAStore, [FilteredBitcoinEvent])-> BitcoinEvent -> (MAStore, [FilteredBitcoinEvent])
-updateStore (store, maEvents) (NewTransaction utxid tx origins) =
+updateStore (store, fEvents) (NewTransaction utxid tx origins) =
     let pendingTransaction =
             case isFromMarkerAddress (masConf store) origins of
                 Nothing -> PendingTransaction tx 0 StandardTransaction
                 Just origin -> PendingTransaction tx 0
                                     (PendingMarkerTransaction origin)
         masPending' = M.insert utxid pendingTransaction (masPending store)
-    in (store { masPending = masPending' }, maEvents)
-updateStore (store, maEvents) (TransactionUpdate utxid confs) =
+    in (store { masPending = masPending' }, fEvents)
+updateStore (store, fEvents) (TransactionUpdate utxid confs) =
     let pendingTransaction = lookupPendingTransaction store utxid
         pendingTransaction' = pendingTransaction { ptConfs = confs }
         masPending' = M.insert utxid pendingTransaction' (masPending store)
-    in (store { masPending = masPending' }, maEvents)
-updateStore (store, maEvents) (TransactionAccepted utxid) =
+    in (store { masPending = masPending' }, fEvents)
+updateStore (store, fEvents) (TransactionAccepted utxid) =
     let pendingTransaction = lookupPendingTransaction store utxid
         tx = ptTx pendingTransaction
         confs = ptConfs pendingTransaction
@@ -82,13 +170,13 @@ updateStore (store, maEvents) (TransactionAccepted utxid) =
                 AcceptedMarkerTransaction psMA -> Just psMA
         masPending' = M.delete utxid (masPending store)
         fEvent = FilteredNewTransaction tx confs ma
-    in (store { masPending = masPending' }, maEvents ++ [fEvent])
-updateStore (store, maEvents) (TransactionDisappeared utxid) =
+    in (store { masPending = masPending' }, fEvents ++ [fEvent])
+updateStore (store, fEvents) (TransactionDisappeared utxid) =
     let pendingTransaction = lookupPendingTransaction store utxid
         store' = case ptStatus pendingTransaction of
                     StandardTransaction -> store
                     PendingMarkerTransaction address ->
-                        disableMarkerAddress store address
+                        disableMarkerAddress store address      -- TODO: logging for this (via fEvents)
                     AcceptedMarkerTransaction address ->
                         disableMarkerAddress store address
         masPending' = M.delete utxid (masPending store')
@@ -103,14 +191,14 @@ disableMarkerAddress store address =
 
 lookupMarkerAddressDetails :: MAStore -> BitcoinAddress -> MarkerAddressDetails
 lookupMarkerAddressDetails store address =
-    fromMaybe (error "Inconsistency: Failed to lookup details\
-                     \ for a marker address that is in use.")
+    fromMaybe (error ("Inconsistency: Failed to lookup details"
+                     ++ " for a marker address that is in use."))
               (M.lookup address (masConf store))
 
 lookupPendingTransaction :: MAStore -> UniqueTransactionID -> PendingTransaction
 lookupPendingTransaction store utxid =
-    fromMaybe (error "Inconsistency: Received an update for a\
-               \ transaction that I have not seen before.")
+    fromMaybe (error ("Inconsistency: Received an update for a"
+                     ++ " transaction that I have not seen before."))
               (M.lookup utxid (masPending store))
 
 isFromMarkerAddress :: Ord a => M.Map a b -> [a] -> Maybe a

@@ -26,7 +26,7 @@ main = do
     _ <- forkIO $ bitcoinEventTask Nothing debugAuth pidfile acceptTest
                         initialEventTaskState chan
     let maStore = initMarkerAddressStore
-                        [(BitcoinAddress "1MAbwuYp8CPChJ1ua25tnEKXkfXTVqEoyg", 0)]
+                        [(BitcoinAddress "1MAbwuYp8CPChJ1ua25tnEKXkfXTVqEoyg", 1000000)]
     loop maStore chan
 
 loop maStore chan = do
