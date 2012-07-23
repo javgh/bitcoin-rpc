@@ -33,6 +33,11 @@ formatPendingTx :: Show a => (Transaction, a) -> [Char]
 formatPendingTx (tx, reason) =
     show (tAddress tx) ++ "; " ++ show (tAmount tx) ++ "; " ++ show reason
 
+formatFilteredTx fTx@FilteredNewTransaction{} =
+    "New transaction: " ++ show (tAddress . fntTx $ fTx)
+        ++ "; " ++ show (tAmount . fntTx $ fTx)
+formatFilteredTx MarkerAddressBreached{} = ""
+
 loop maStore chan = do
     let pendingTxsOutput =
             unlines . map formatPendingTx $ listPendingTransactions maStore
@@ -41,10 +46,7 @@ loop maStore chan = do
     writeFile "statusfile1" pendingTxsOutput
     writeFile "statusfile2" maStatusOutput
     (_, events) <- readChan chan
-    putStrLn "--- events:"
-    print events
     let (maStore', fEvents) = processEvents maStore events
-    putStrLn "--- filtered events:"
-    print fEvents
-    putStrLn ""
+    let filteredOutput = unlines . map formatFilteredTx $ fEvents
+    putStr filteredOutput
     loop maStore' chan
