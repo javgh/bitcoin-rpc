@@ -57,11 +57,11 @@ test7 = testCase "validateaddress" $ do
         assertFailure "invalid address is not rejected"
     c2 <-validateAddressR Nothing auth
             (BitcoinAddress "14Z1mazY4HfysZyMaKudFr63EwHqQT2njz")
-    when (not (baiIsValid c2)) $
+    unless (baiIsValid c2) $
         assertFailure "valid address is rejected"
     myAddr <- getNewAddressR Nothing auth
     c3 <- validateAddressR Nothing auth myAddr
-    when (not (baiIsMine c3)) $
+    unless (baiIsMine c3) $
         assertFailure "newly created address is not recognized as own"
 
 test8 :: Test

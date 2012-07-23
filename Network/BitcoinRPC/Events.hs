@@ -97,7 +97,7 @@ getNewBitcoinEvents mLogger auth acceptTest (EventTaskState lrsCheckpoint utxPoo
     (lrsCheckpoint', newTxs) <- getNewTransactions mLogger auth lrsCheckpoint
     let newReceiveTxs = filter onlyReceive newTxs
         newPoolEntries = map (\tx -> (getUniqueTransactionID tx, 0)) newReceiveTxs
-        utxPool' = M.union utxPool (M.fromList newPoolEntries)
+        utxPool' = utxPool `M.union` M.fromList newPoolEntries
     appearingEvents <- mapM (augmentNewTransaction mLogger auth) newReceiveTxs
     (utxPool'', updateEvents) <- updatePool mLogger auth acceptTest utxPool'
     let newState = EventTaskState lrsCheckpoint' utxPool''
@@ -204,7 +204,7 @@ notifiedPollLoop semaphore mLogger auth acceptTest firstState chan = go firstSta
                                     -- then later only after signals have been
                                     -- received.
         (state', events) <- getNewBitcoinEvents mLogger auth acceptTest state
-        when (not (null events)) $
+        unless (null events) $
             writeChan chan (state', events)
         go state'
 

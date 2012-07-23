@@ -46,8 +46,8 @@ data MarkerAddressDetails = MarkerAddressDetails { madActive :: Bool
 type MarkerAddressesConf = M.Map BitcoinAddress MarkerAddressDetails
 
 data PendingStatus = StandardTransaction
-                   | PendingMarkerTransaction { psMarkerAddress :: BitcoinAddress }
-                   | AcceptedMarkerTransaction { psMarkerAddress :: BitcoinAddress }
+                   | PendingMarkerTransaction { _psMarkerAddress :: BitcoinAddress }
+                   | AcceptedMarkerTransaction { _psMarkerAddress :: BitcoinAddress }
                    deriving (Show)
 
 data PendingTransaction = PendingTransaction { ptTx :: Transaction
@@ -195,7 +195,7 @@ updateStore (store, fEvents) (TransactionAccepted utxid) =
                         AcceptedMarkerTransaction _ ->
                             [] -- has already been returned earlier
     in (store { masPending = masPending' }, fEvents ++ maybeFEvents)
-updateStore (store, fEvents) (TransactionDisappeared utxid) =
+updateStore (store, _) (TransactionDisappeared utxid) =
     let pendingTransaction = lookupPendingTransaction store utxid
         (store', maybeFEvents) =
             case ptStatus pendingTransaction of
@@ -233,9 +233,9 @@ lookupPendingTransaction store utxid =
               (M.lookup utxid (masPending store))
 
 isFromMarkerAddress :: Ord a => M.Map a b -> [a] -> Maybe a
-isFromMarkerAddress conf origins = go origins
+isFromMarkerAddress conf = go
   where
     go [] = Nothing
-    go (origin:origins) = if M.member origin conf
-                            then Just origin
-                            else go origins
+    go (o:os) = if M.member o conf
+                    then Just o
+                    else go os

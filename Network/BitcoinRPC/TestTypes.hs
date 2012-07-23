@@ -30,7 +30,7 @@ instance Arbitrary ArbBitcoinAddress where
         a <- choose ('a', 'z')
         b <- choose ('a', 'z')
         c <- choose ('a', 'z')
-        return $ ABAddr (BitcoinAddress (T.pack ('1' : a : b : c : [])))
+        return $ ABAddr (BitcoinAddress (T.pack ['1', a, b, c]))
 
 instance Arbitrary ArbTransactionID where
     arbitrary = do

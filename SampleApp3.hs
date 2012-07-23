@@ -29,7 +29,7 @@ main = do
                         [(BitcoinAddress "1MAbwuYp8CPChJ1ua25tnEKXkfXTVqEoyg", 1000000)]
     loop maStore chan
 
-formatPendingTx :: Show a => (Transaction, a) -> [Char]
+formatPendingTx :: Show a => (Transaction, a) -> String
 formatPendingTx (tx, reason) =
     show (tAddress tx) ++ "; " ++ show (tAmount tx) ++ "; " ++ show reason
 
