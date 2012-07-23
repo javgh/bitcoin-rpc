@@ -6,6 +6,7 @@ module Network.BitcoinRPC.MarkerAddresses
     , listMarkerAdressStatus
     , MAStore
     , PendingReason(..)
+    , FilteredBitcoinEvent(..)
 #if !PRODUCTION
     , sumAcceptedMarkerAmounts
 #endif

@@ -44,8 +44,8 @@ test5 = testCase "getnewaddress" $ do
 
 test6 :: Test
 test6 = testCase "getbalance" $ do
-    b1 <- getBalanceR Nothing auth 0
-    b2 <- getBalanceR Nothing auth 6
+    b1 <- getBalanceR Nothing auth 0 False
+    b2 <- getBalanceR Nothing auth 6 False
     when (b1 < b2) $
         assertFailure "getbalance reports less unconfirmed funds\
                       \ than confirmed ones (?)"
@@ -65,7 +65,7 @@ test7 = testCase "validateaddress" $ do
         assertFailure "newly created address is not recognized as own"
 
 test8 :: Test
-test8 = testCase "sendtoaddress" $ do
+test8 = testCase "sendtoaddress (1)" $ do
     let nullAmount = BitcoinAmount 0
         largeAmount = BitcoinAmount $ 21000000 * 10 ^ (6::Integer)
     s1 <- sendToAddress auth (BitcoinAddress "invalidaddress") largeAmount
@@ -84,8 +84,26 @@ test8 = testCase "sendtoaddress" $ do
         Right (Left InsufficientFunds) -> return ()
         _ -> assertFailure "insufficient funds are not detected"
 
--- TODO: make sure, that (getbalance - getmarkerbalance) can be figured out
---       somehow and then make a sendtoaddress test which sends funds.
+test9 :: Test
+test9 = testCase "sendtoaddress (2)" $ do
+    let smallAmount = BitcoinAmount 1000000
+        fee = BitcoinAmount 50000
+    b <- getBalanceR Nothing auth 1 True
+    myAddr <- getNewAddressR Nothing auth
+    when (b >= smallAmount + fee) $ do
+        s <- sendToAddress auth myAddr smallAmount
+        case s of
+            Right (Right _) -> return ()
+            _ -> assertFailure "sendtoaddress failed, even though\
+                               \ sufficient funds should be available"
+
+test10 :: Test
+test10 = testCase "getbalance, filtered marker coins" $ do
+    b1 <- getBalanceR Nothing auth 0 False
+    b2 <- getBalanceR Nothing auth 0 True
+    when (b1 < b2) $
+        assertFailure "the balance without marker coins is\
+                      \ less than the total balance (?)"
 
 main :: IO ()
 main = defaultMain tests
@@ -99,6 +117,8 @@ tests = [ test1
         , test6
         , test7
         , test8
+        , test9
+        , test10
         ] ++
         eventsTests
         ++ markerAdressesTests
