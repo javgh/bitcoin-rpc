@@ -77,7 +77,9 @@ listMarkerAdressStatus store = map format $ M.toList (masConf store)
         (ma, active, limit, pendingAmount)
 
 listPendingTransactions :: MAStore -> [(Transaction, PendingReason)]
-listPendingTransactions store = concatMap format $ M.toList (masPending store)
+listPendingTransactions store =
+    let pendingTransactions = concatMap format $ M.toList (masPending store)
+    in sortBy (comparing (tTime . fst)) pendingTransactions
   where
     format (_, PendingTransaction tx confs status) =
         case status of
