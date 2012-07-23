@@ -2,7 +2,10 @@
 module Network.BitcoinRPC.MarkerAddresses
     ( initMarkerAddressStore
     , processEvents
+    , listPendingTransactions
+    , listMarkerAdressStatus
     , MAStore
+    , PendingReason(..)
 #if !PRODUCTION
     , sumAcceptedMarkerAmounts
 #endif
@@ -28,6 +31,10 @@ data FilteredBitcoinEvent = FilteredNewTransaction { fntTx :: Transaction
                                                         BitcoinAddress
                                                   }
                           deriving (Show)
+
+data PendingReason = TooFewConfirmations { prConfs :: Integer }
+                   | MarkerAddressLimitReached { prMarkerAddress :: BitcoinAddress }
+                   deriving (Show)
 
 data MarkerAddressDetails = MarkerAddressDetails { madActive :: Bool
                                                  , madLimit :: BitcoinAmount
@@ -55,15 +62,27 @@ data MAStore = MAStore { masConf :: MarkerAddressesConf
                        }
                        deriving (Show)
 
--- TODO: Function to list all pending transactions and their status
--- TODO: Function to list details about marker addresses (pending amount)
-
 initMarkerAddressStore :: [(BitcoinAddress, BitcoinAmount)] -> MAStore
 initMarkerAddressStore markerAddresses =
     let confList = map transform markerAddresses
     in MAStore (M.fromList confList) M.empty
   where
     transform (addr, limit) = (addr, MarkerAddressDetails True limit 0)
+
+listMarkerAdressStatus :: MAStore -> [(BitcoinAddress, Bool, BitcoinAmount, BitcoinAmount)]
+listMarkerAdressStatus store = map format $ M.toList (masConf store)
+  where
+    format (ma, MarkerAddressDetails active limit pendingAmount) =
+        (ma, active, limit, pendingAmount)
+
+listPendingTransactions :: MAStore -> [(Transaction, PendingReason)]
+listPendingTransactions store = concatMap format $ M.toList (masPending store)
+  where
+    format (_, PendingTransaction tx confs status) =
+        case status of
+            StandardTransaction -> [(tx, TooFewConfirmations confs)]
+            PendingMarkerTransaction ma -> [(tx, MarkerAddressLimitReached ma)]
+            AcceptedMarkerTransaction _ -> []
 
 processEvents :: MAStore -> [BitcoinEvent] -> (MAStore, [FilteredBitcoinEvent])
 processEvents store events =
@@ -145,10 +164,6 @@ sumAcceptedMarkerAmounts =
             then (ma1, x + y)
             else error ("Implementation error: Expected to be summing"
                        ++ " data for the same marker address.")
-
-
-
--- TODO: write HUnit tests for updateStore
 
 updateStore :: (MAStore, [FilteredBitcoinEvent])-> BitcoinEvent -> (MAStore, [FilteredBitcoinEvent])
 updateStore (store, fEvents) (NewTransaction utxid tx origins) =
