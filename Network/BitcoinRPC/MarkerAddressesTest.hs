@@ -15,6 +15,7 @@ import Network.BitcoinRPC.MarkerAddresses
 import Network.BitcoinRPC.TestTypes
 import Network.BitcoinRPC.Types
 
+propSumsMatch :: [(ArbBitcoinAddress, ArbBitcoinAmount)]-> [(ArbBitcoinAddress, ArbBitcoinAmount)] -> Bool
 propSumsMatch arbListA arbListB =
     let listA = map ((***) unABAddr unABAmount) arbListA
         listB = map ((***) unABAddr unABAmount) arbListB
@@ -24,6 +25,7 @@ propSumsMatch arbListA arbListB =
         sumTotal' = sumAcceptedMarkerAmounts (sumA ++ sumB)
     in sumTotal == sumTotal'
 
+propSizeLessOrEqual :: [(ArbBitcoinAddress, ArbBitcoinAmount)] -> Bool
 propSizeLessOrEqual arbListA =
     let listA = map ((***) unABAddr unABAmount) arbListA
         sumA = sumAcceptedMarkerAmounts listA
@@ -43,7 +45,7 @@ makeTransactionEvents txid address amount origins =
 
 checkTestData :: (MAStore, [(String, [BitcoinEvent], Int)]) -> IO ()
 checkTestData (initialStore, entries) = do
-    foldlM check initialStore entries
+    _ <- foldlM check initialStore entries
     return ()
   where
     check store (msg, events, expectedReply) = do
@@ -66,9 +68,11 @@ standardTransactionTestData =
                , ("transaction is accepted", [acc], 1)
                ] )
 
+test1 :: Test
 test1 = testCase "standard transaction" $
             checkTestData standardTransactionTestData
 
+markerTransactionTestData :: (MAStore, [(String, [BitcoinEvent], Int)])
 markerTransactionTestData =
     let store = initMarkerAddressStore [(BitcoinAddress "1def", 1)]
         (new, update, acc, _) = makeTransactionEvents
@@ -79,6 +83,7 @@ markerTransactionTestData =
                , ("transaction is accepted", [acc], 0)
                ] )
 
+test2 :: Test
 test2 = testCase "marker transaction" $
             checkTestData markerTransactionTestData
 
@@ -93,9 +98,11 @@ standardTransactionDisappearingTestData =
                , ("transaction disappears", [dis], 0)
                ] )
 
+test3 :: Test
 test3 = testCase "standard transaction, disappearing" $
             checkTestData standardTransactionDisappearingTestData
 
+markerTransactionDisappearingTestData :: (MAStore, [(String, [BitcoinEvent], Int)])
 markerTransactionDisappearingTestData =
     let store = initMarkerAddressStore [(BitcoinAddress "1def", 1)]
         (new1, update1, _, dis1) = makeTransactionEvents
@@ -113,9 +120,11 @@ markerTransactionDisappearingTestData =
                , ("second transaction is accepted", [acc2], 1)
                ] )
 
+test4 :: Test
 test4 = testCase "marker transaction, disappearing" $
             checkTestData markerTransactionDisappearingTestData
 
+complexScenarioTestData :: (MAStore, [(String, [BitcoinEvent], Int)])
 complexScenarioTestData =
     let store = initMarkerAddressStore [(BitcoinAddress "marker", 1)]
         (new1, update1, acc1, _) = makeTransactionEvents
@@ -135,6 +144,7 @@ complexScenarioTestData =
                , ("t2 accepted", [acc2], 0)
                ] )
 
+test5 :: Test
 test5 = testCase "complex scenario" $
             checkTestData complexScenarioTestData
 
@@ -143,6 +153,3 @@ markerAdressesTests = [ testProperty "sums match" propSumsMatch
                       , testProperty "sum size is less or equal" propSizeLessOrEqual
                       , test1, test2, test3, test4, test5
                       ]
-
-main :: IO ()
-main = defaultMain [test1, test2, test3, test4, test5]
