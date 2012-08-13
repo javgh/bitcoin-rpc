@@ -20,6 +20,7 @@ import Control.Monad
 import Data.Aeson
 import Data.Aeson.Types
 import Data.Maybe
+import Data.Serialize
 
 import qualified Data.ByteString as B
 import qualified Data.HashMap.Strict as H
@@ -93,6 +94,10 @@ data BitcoinAddressInfo = BitcoinAddressInfo { baiIsValid :: Bool
 
 data SendError = InvalidAddress | InsufficientFunds | InvalidAmount | OtherError
                 deriving (Show)
+
+instance Serialize TransactionID where
+    put = put . T.unpack . btcTxID
+    get = TransactionID . T.pack <$> get
 
 instance Num BitcoinAmount
   where

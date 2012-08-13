@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 -- |
 -- How to use:
 --
@@ -19,6 +20,7 @@ module Network.BitcoinRPC.Events
     , bitcoinEventTask
     , BitcoinEvent(..)
     , UniqueTransactionID(..)
+    , EventTaskState
 #if !PRODUCTION
     , LRSCheckpoint(..)
     , determineNewTransactions
@@ -29,6 +31,8 @@ import Control.Concurrent
 import Control.Exception
 import Control.Monad
 import Control.Watchdog
+import Data.Serialize
+import GHC.Generics
 import System.Posix.Process
 import System.Posix.Signals
 
@@ -52,14 +56,14 @@ lrsCheckpointInterval = lrsCheckpointConfirmations * 10 * 60
 data UniqueTransactionID = UniqueTransactionID { uTxID :: TransactionID
                                                , uEntry :: Integer
                                                }
-                           deriving (Eq, Ord, Show, Read)
+                           deriving (Eq, Ord, Show, Read, Generic)
 
 -- | Keep track on how we need to call 'listreceivedsince' next to get
 -- everything new that happened.
 data LRSCheckpoint = LRSCheckpoint { lrsTimestamp :: Integer
                                    , lrsKnownTxIDs :: [TransactionID]
                                    }
-                     deriving (Eq,Show,Read)
+                     deriving (Eq,Show,Read,Generic)
 
 -- | Keeps track of confirmation count for recent unique transactions.
 type UTXPool = M.Map UniqueTransactionID Integer
@@ -67,6 +71,7 @@ type UTXPool = M.Map UniqueTransactionID Integer
 data EventTaskState = EventTaskState { etsLRSCheckpoint :: LRSCheckpoint
                                      , etsPool :: UTXPool
                                      }
+                      deriving (Generic)
 
 data BitcoinEvent = NewTransaction { beUTxID :: UniqueTransactionID
                                    , beTx :: Transaction
@@ -78,6 +83,12 @@ data BitcoinEvent = NewTransaction { beUTxID :: UniqueTransactionID
                   | TransactionAccepted { beUTxID :: UniqueTransactionID }
                   | TransactionDisappeared { beUTxID :: UniqueTransactionID }
                   deriving (Show)
+
+instance Serialize UniqueTransactionID
+
+instance Serialize LRSCheckpoint
+
+instance Serialize EventTaskState
 
 initialEventTaskState :: EventTaskState
 initialEventTaskState = EventTaskState { etsLRSCheckpoint =
