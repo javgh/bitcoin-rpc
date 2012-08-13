@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP, DeriveGeneric, OverloadedStrings #-}
 module Network.BitcoinRPC.MarkerAddresses
     ( initMarkerAddressStore
+    , updateMarkerAddresses
     , processEvents
     , listPendingTransactions
     , listMarkerAdressStatus
@@ -75,10 +76,17 @@ instance Serialize MAStore
 
 initMarkerAddressStore :: [(BitcoinAddress, BitcoinAmount)] -> MAStore
 initMarkerAddressStore markerAddresses =
-    let confList = map transform markerAddresses
+    let confList = map transformMarkerAddresses markerAddresses
     in MAStore (M.fromList confList) M.empty
-  where
-    transform (addr, limit) = (addr, MarkerAddressDetails True limit 0)
+
+updateMarkerAddresses :: MAStore -> [(BitcoinAddress, BitcoinAmount)] -> MAStore
+updateMarkerAddresses store markerAddresses =
+    let confList = map transformMarkerAddresses markerAddresses
+    in store { masConf = M.fromList confList }
+
+transformMarkerAddresses :: (BitcoinAddress, BitcoinAmount) -> (BitcoinAddress, MarkerAddressDetails)
+transformMarkerAddresses (addr, limit) =
+    (addr, MarkerAddressDetails True limit 0)
 
 listMarkerAdressStatus :: MAStore -> [(BitcoinAddress, Bool, BitcoinAmount, BitcoinAmount)]
 listMarkerAdressStatus store = map format $ M.toList (masConf store)
