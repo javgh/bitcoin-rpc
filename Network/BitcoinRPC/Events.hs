@@ -71,7 +71,7 @@ type UTXPool = M.Map UniqueTransactionID Integer
 data EventTaskState = EventTaskState { etsLRSCheckpoint :: LRSCheckpoint
                                      , etsPool :: UTXPool
                                      }
-                      deriving (Generic)
+                      deriving (Show,Generic)
 
 data BitcoinEvent = NewTransaction { beUTxID :: UniqueTransactionID
                                    , beTx :: Transaction
