@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, OverloadedStrings #-}
+{-# LANGUAGE CPP, DeriveGeneric, OverloadedStrings #-}
 module Network.BitcoinRPC.MarkerAddresses
     ( initMarkerAddressStore
     , processEvents
@@ -16,6 +16,8 @@ import Data.Function
 import Data.List
 import Data.Maybe
 import Data.Ord
+import Data.Serialize
+import GHC.Generics
 
 import qualified Data.Map as M
 
@@ -41,27 +43,35 @@ data MarkerAddressDetails = MarkerAddressDetails { madActive :: Bool
                                                  , madLimit :: BitcoinAmount
                                                  , madPendingAmount :: BitcoinAmount
                                                  }
-                            deriving (Show)
+                            deriving (Show, Generic)
 
 type MarkerAddressesConf = M.Map BitcoinAddress MarkerAddressDetails
 
 data PendingStatus = StandardTransaction
                    | PendingMarkerTransaction { _psMarkerAddress :: BitcoinAddress }
                    | AcceptedMarkerTransaction { _psMarkerAddress :: BitcoinAddress }
-                   deriving (Show)
+                   deriving (Show, Generic)
 
 data PendingTransaction = PendingTransaction { ptTx :: Transaction
                                              , ptConfs :: Integer
                                              , ptStatus :: PendingStatus
                                              }
-                          deriving (Show)
+                          deriving (Show, Generic)
 
 type PendingTransactions = M.Map UniqueTransactionID PendingTransaction
 
 data MAStore = MAStore { masConf :: MarkerAddressesConf
                        , masPending :: PendingTransactions
                        }
-                       deriving (Show)
+                       deriving (Show, Generic)
+
+instance Serialize MarkerAddressDetails
+
+instance Serialize PendingTransaction
+
+instance Serialize PendingStatus
+
+instance Serialize MAStore
 
 initMarkerAddressStore :: [(BitcoinAddress, BitcoinAmount)] -> MAStore
 initMarkerAddressStore markerAddresses =

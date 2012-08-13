@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric, OverloadedStrings #-}
 module Network.BitcoinRPC.Types
     ( BitcoinAmount(..)
     , BitcoinAddress(..)
@@ -21,6 +21,7 @@ import Data.Aeson
 import Data.Aeson.Types
 import Data.Maybe
 import Data.Serialize
+import GHC.Generics
 
 import qualified Data.ByteString as B
 import qualified Data.HashMap.Strict as H
@@ -28,7 +29,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
 
 newtype BitcoinAmount = BitcoinAmount { btcAmount :: Integer }
-                        deriving (Eq,Ord,Show,Read)
+                        deriving (Eq,Ord,Show,Read,Generic)
 
 newtype BitcoinAddress = BitcoinAddress { btcAddress :: T.Text }
                          deriving (Eq,Ord,Show,Read)
@@ -64,7 +65,7 @@ data Transaction = ReceiveTx { tEntry :: Integer
                               , tTxid :: TransactionID
                               , tTime :: Integer
                               }
-                 deriving (Eq,Show,Read)
+                 deriving (Eq,Show,Read,Generic)
 
 
 data TransactionHeader = TransactionHeader { thAmount :: BitcoinAmount
@@ -95,9 +96,17 @@ data BitcoinAddressInfo = BitcoinAddressInfo { baiIsValid :: Bool
 data SendError = InvalidAddress | InsufficientFunds | InvalidAmount | OtherError
                 deriving (Show)
 
+instance Serialize BitcoinAmount
+
+instance Serialize BitcoinAddress where
+    put = put . T.unpack . btcAddress
+    get = BitcoinAddress . T.pack <$> get
+
 instance Serialize TransactionID where
     put = put . T.unpack . btcTxID
     get = TransactionID . T.pack <$> get
+
+instance Serialize Transaction
 
 instance Num BitcoinAmount
   where
