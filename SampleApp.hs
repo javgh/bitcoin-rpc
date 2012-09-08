@@ -1,6 +1,5 @@
 module Main where
 
-import Control.Concurrent
 import Control.Monad
 import System.Environment
 import System.Exit
@@ -20,9 +19,8 @@ main = do
         exitFailure
     let pidfile = head args
 
-    chan <- newChan
-    _ <- forkIO $ bitcoinEventTask Nothing debugAuth pidfile acceptTest
-                        initialEventTaskState chan
+    betHandle <- initBitcoinEventTask Nothing debugAuth pidfile
+                                        acceptTest initialEventTaskState
     forever $ do
-        (_, events) <- readChan chan
+        (_, events) <- waitForBitcoinEvents betHandle
         mapM print events

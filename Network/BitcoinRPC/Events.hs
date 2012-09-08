@@ -2,11 +2,12 @@
 -- |
 -- How to use:
 --
--- 1. Use 'forkIO' (or similar) to start 'bitcoinEventTask' in its own thread.
+-- 1. Use 'initBitcoinEventTask' to start a thread which will listen for Bitcoin
+--    events.
 --
--- 2. Listen on the channel for event updates. Every batch of updates
---    will also include a new state description, which can be passed to
---    'bitcoinEventTask' when it needs to be restarted.
+-- 2. Use 'waitForBitcoinEvents' to listen for event updates. Every batch of
+--    updates will also include a new state description, which can be passed to
+--    'initBitcoinEventTask' when it needs to be restarted.
 --
 -- Note: For every new transaction you are guaranteed to receive a
 -- 'NewTransaction' as well as either a 'TransactionAccepted' or
@@ -17,10 +18,12 @@
 {-# LANGUAGE OverloadedStrings, CPP #-}
 module Network.BitcoinRPC.Events
     ( initialEventTaskState
-    , bitcoinEventTask
+    , initBitcoinEventTask
+    , waitForBitcoinEvents
     , BitcoinEvent(..)
     , UniqueTransactionID(..)
     , EventTaskState
+    , BitcoinEventTaskHandle
 #if !PRODUCTION
     , LRSCheckpoint(..)
     , determineNewTransactions
@@ -49,6 +52,10 @@ lrsCheckpointConfirmations = 100
 -- specified in 'lrsCheckpointConfirmations'.
 lrsCheckpointInterval :: Integer
 lrsCheckpointInterval = lrsCheckpointConfirmations * 10 * 60
+
+newtype BitcoinEventTaskHandle = BitcoinEventTaskHandle
+                                    { unBETH :: Chan (EventTaskState,
+                                                        [BitcoinEvent]) }
 
 -- | Create identifier that can differentiate between the outgoing and incoming
 -- side of the same transaction id.  Slightly confusing as this means that a
@@ -219,17 +226,20 @@ notifiedPollLoop semaphore mLogger auth acceptTest firstState chan = go firstSta
             writeChan chan (state', events)
         go state'
 
-bitcoinEventTask :: Maybe WatchdogLogger
-                 -> RPCAuth
-                 -> FilePath    -- ^  PID will be written here to get
-                                -- notifications from Bitcoin daemon
-                 -> (TransactionHeader -> Bool)
-                                -- ^ test to decide whether a transaction
-                                -- can be accepted
-                 -> EventTaskState  -- ^ state from which to resume
-                 -> Chan (EventTaskState, [BitcoinEvent])
-                                -- ^ channel which will receive updates
-                 -> IO ()
-bitcoinEventTask mLogger auth pidfile acceptTest state chan = do
+initBitcoinEventTask :: Maybe WatchdogLogger
+                     -> RPCAuth
+                     -> FilePath    -- ^  PID will be written here to get
+                                    -- notifications from Bitcoin daemon
+                     -> (TransactionHeader -> Bool)
+                                    -- ^ test to decide whether a transaction
+                                    -- can be accepted
+                     -> EventTaskState  -- ^ state from which to resume
+                     -> IO (BitcoinEventTaskHandle)
+initBitcoinEventTask mLogger auth pidfile acceptTest state = do
+    chan <- newChan
     semaphore <- setupBitcoinNotifcation pidfile
-    notifiedPollLoop semaphore mLogger auth acceptTest state chan
+    _ <- forkIO $ notifiedPollLoop semaphore mLogger auth acceptTest state chan
+    return $ BitcoinEventTaskHandle chan
+
+waitForBitcoinEvents :: BitcoinEventTaskHandle -> IO (EventTaskState, [BitcoinEvent])
+waitForBitcoinEvents betHandle = readChan (unBETH betHandle)

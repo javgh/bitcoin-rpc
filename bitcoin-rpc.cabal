@@ -26,6 +26,7 @@ library
                  , cereal == 0.3.*
   exposed-modules: Network.BitcoinRPC
                    , Network.BitcoinRPC.Events
+                   , Network.BitcoinRPC.Events.MarkerAddresses
                    , Network.BitcoinRPC.Types
                    , Network.BitcoinRPC.MarkerAddresses
   ghc-options: -O -Wall
