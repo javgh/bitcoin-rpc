@@ -8,6 +8,7 @@ module Network.BitcoinRPC.Events.MarkerAddresses
     ( initialFilteredEventTaskState
     , initFilteredBitcoinEventTask
     , waitForFilteredBitcoinEvents
+    , killFilteredBitcoinEventTask
     , updateMarkerAddresses
     , listPendingTransactions
     , listMarkerAdressStatus
@@ -75,6 +76,9 @@ initFilteredBitcoinEventTask mLogger auth pidfile acceptTest state = do
     wrappedMAStore <- newMVar $ fetsMAStore state
     return $ FilteredBitcoinEventTaskHandle betHandle wrappedMAStore
 
+-- | Wait for new Bitcoin events, but already filter them based on the
+-- marker address configuration. This might sometimes return an empty list of
+-- events.
 waitForFilteredBitcoinEvents :: FilteredBitcoinEventTaskHandle-> IO (FilteredEventTaskState, [MA.FilteredBitcoinEvent])
 waitForFilteredBitcoinEvents fbetHandle = do
     let betHandle = fbetBetHandle fbetHandle
@@ -87,3 +91,7 @@ waitForFilteredBitcoinEvents fbetHandle = do
                            , fetsEventTaskState = etState'
                            }
     return (fbetState, fEvents)
+
+killFilteredBitcoinEventTask :: FilteredBitcoinEventTaskHandle -> IO ()
+killFilteredBitcoinEventTask fbetHandle =
+    killBitcoinEventTask (fbetBetHandle fbetHandle)

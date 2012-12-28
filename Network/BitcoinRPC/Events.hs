@@ -20,6 +20,7 @@ module Network.BitcoinRPC.Events
     ( initialEventTaskState
     , initBitcoinEventTask
     , waitForBitcoinEvents
+    , killBitcoinEventTask
     , BitcoinEvent(..)
     , UniqueTransactionID(..)
     , EventTaskState
@@ -53,9 +54,11 @@ lrsCheckpointConfirmations = 100
 lrsCheckpointInterval :: Integer
 lrsCheckpointInterval = lrsCheckpointConfirmations * 10 * 60
 
-newtype BitcoinEventTaskHandle = BitcoinEventTaskHandle
-                                    { unBETH :: Chan (EventTaskState,
-                                                        [BitcoinEvent]) }
+data BitcoinEventTaskHandle = BitcoinEventTaskHandle
+                                { bethChan ::
+                                    Chan (EventTaskState, [BitcoinEvent])
+                                , bethThreadId :: ThreadId
+                                }
 
 -- | Create identifier that can differentiate between the outgoing and incoming
 -- side of the same transaction id.  Slightly confusing as this means that a
@@ -222,8 +225,7 @@ notifiedPollLoop semaphore mLogger auth acceptTest firstState chan = go firstSta
                                     -- then later only after signals have been
                                     -- received.
         (state', events) <- getNewBitcoinEvents mLogger auth acceptTest state
-        unless (null events) $
-            writeChan chan (state', events)
+        writeChan chan (state', events)
         go state'
 
 initBitcoinEventTask :: Maybe WatchdogLogger
@@ -238,8 +240,14 @@ initBitcoinEventTask :: Maybe WatchdogLogger
 initBitcoinEventTask mLogger auth pidfile acceptTest state = do
     chan <- newChan
     semaphore <- setupBitcoinNotifcation pidfile
-    _ <- forkIO $ notifiedPollLoop semaphore mLogger auth acceptTest state chan
-    return $ BitcoinEventTaskHandle chan
+    threadId <-
+        forkIO $ notifiedPollLoop semaphore mLogger auth acceptTest state chan
+    return $ BitcoinEventTaskHandle chan threadId
 
+-- | Wait for new Bitcoin Events. This might sometimes return an empty list of
+-- events.
 waitForBitcoinEvents :: BitcoinEventTaskHandle -> IO (EventTaskState, [BitcoinEvent])
-waitForBitcoinEvents betHandle = readChan (unBETH betHandle)
+waitForBitcoinEvents betHandle = readChan (bethChan betHandle)
+
+killBitcoinEventTask :: BitcoinEventTaskHandle -> IO ()
+killBitcoinEventTask betHandle = killThread (bethThreadId betHandle)
