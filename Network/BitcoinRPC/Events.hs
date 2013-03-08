@@ -33,7 +33,6 @@ module Network.BitcoinRPC.Events
 
 import Control.Concurrent
 import Control.Exception
-import Control.Monad
 import Control.Watchdog
 import Data.Serialize
 import GHC.Generics
