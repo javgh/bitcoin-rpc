@@ -250,3 +250,5 @@ waitForBitcoinEvents betHandle = readChan (bethChan betHandle)
 
 killBitcoinEventTask :: BitcoinEventTaskHandle -> IO ()
 killBitcoinEventTask betHandle = killThread (bethThreadId betHandle)
+
+listReceivedSinceR = undefined

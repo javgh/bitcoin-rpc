@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.BitcoinRPC
     ( getBlockCountR
-    , listReceivedSinceR
+    , getBlockHashR
+    , listSinceBlockR
     , getTransactionR
     , getOriginsR
     , getNewAddressR
@@ -155,11 +156,20 @@ getBlockCountR mLogger auth = do
     v <- reliableApiCall mLogger $ callApi auth "getblockcount" "[]"
     parseReply "getblockcount" v :: IO Integer
 
-listReceivedSinceR :: Maybe WatchdogLogger-> RPCAuth -> Integer-> IO [Transaction]
-listReceivedSinceR mLogger auth ts = do
-    let params = "[" `B.append` (B8.pack . show) ts  `B.append` "]"
-    v <- reliableApiCall mLogger $ callApi auth "listreceivedsince" params
-    parseReply "listreceivedsince" v :: IO [Transaction]
+getBlockHashR :: Maybe WatchdogLogger -> RPCAuth -> Integer -> IO BlockHash
+getBlockHashR mLogger auth idx = do
+    let params = "[" `B.append` (B8.pack . show) idx `B.append` "]"
+    v <- reliableApiCall mLogger $ callApi auth "getblockhash" params
+    parseReply "getblockhash" v :: IO BlockHash
+
+listSinceBlockR :: Maybe WatchdogLogger-> RPCAuth -> Maybe BlockHash -> IO SinceBlockInfo
+listSinceBlockR mLogger auth mBlockHash = do
+    let params = case mBlockHash of
+                        Nothing -> "[]"
+                        Just hash -> "[\"" `B.append` blockHashAsByteString hash
+                                        `B.append` "\"]"
+    v <- reliableApiCall mLogger $ callApi auth "listsinceblock" params
+    parseReply "listsinceblock" v :: IO SinceBlockInfo
 
 getTransactionR :: Maybe WatchdogLogger-> RPCAuth -> TransactionID -> IO (Maybe TransactionHeader)
 getTransactionR mLogger auth txid = do
@@ -188,12 +198,9 @@ getNewAddressR mLogger auth = do
     v <- reliableApiCall mLogger $ callApi auth "getnewaddress" "[]"
     parseReply "getnewaddress" v :: IO BitcoinAddress
 
-getBalanceR :: Maybe WatchdogLogger -> RPCAuth -> Integer -> Bool -> IO BitcoinAmount
-getBalanceR mLogger auth minconf filterMarkerCoins = do
-    let params = "[\"*\", " `B.append` (B8.pack . show) minconf  `B.append`
-                    if filterMarkerCoins
-                        then ", true]"
-                        else "]"
+getBalanceR :: Maybe WatchdogLogger -> RPCAuth -> Integer -> IO BitcoinAmount
+getBalanceR mLogger auth minconf = do
+    let params = "[\"*\", " `B.append` (B8.pack . show) minconf  `B.append` "]"
     v <- reliableApiCall mLogger $ callApi auth "getbalance" params
     parseReply "getbalance" v :: IO BitcoinAmount
 

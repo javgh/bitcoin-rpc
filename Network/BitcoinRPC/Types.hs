@@ -3,15 +3,18 @@ module Network.BitcoinRPC.Types
     ( BitcoinAmount(..)
     , BitcoinAddress(..)
     , TransactionID(..)
+    , BlockHash(..)
     , RPCAuth(..)
     , Transaction(..)
     , TransactionHeader(..)
     , TransactionOrigins(..)
     , BitcoinAddressInfo(..)
+    , SinceBlockInfo(..)
     , RPCResult(..)
     , SendError(..)
     , txidAsByteString
     , addressAsByteString
+    , blockHashAsByteString
     )
     where
 
@@ -36,6 +39,9 @@ newtype BitcoinAddress = BitcoinAddress { btcAddress :: T.Text }
 
 newtype TransactionID = TransactionID { btcTxID :: T.Text }
                         deriving (Eq,Ord,Show,Read)
+
+newtype BlockHash = BlockHash { btcBlockHash :: T.Text }
+                    deriving (Eq,Ord,Show,Read)
 
 data RPCAuth = RPCAuth { rpcUrl :: String
                        , rpcUser :: String
@@ -93,6 +99,11 @@ data BitcoinAddressInfo = BitcoinAddressInfo { baiIsValid :: Bool
                                              }
                                              deriving (Show)
 
+data SinceBlockInfo = SinceBlockInfo { sbiTransactions :: [Transaction]
+                                     , sbiLastBlock :: BlockHash
+                                     }
+                                     deriving (Show)
+
 data SendError = InvalidAddress | InsufficientFunds | InvalidAmount | OtherError
                 deriving (Show)
 
@@ -107,6 +118,10 @@ instance Serialize TransactionID where
     get = TransactionID . T.pack <$> get
 
 instance Serialize Transaction
+
+instance Serialize BlockHash where
+    put = put . T.unpack . btcBlockHash
+    get = BlockHash . T.pack <$> get
 
 instance Num BitcoinAmount
   where
@@ -132,6 +147,11 @@ instance FromJSON BitcoinAddress
 instance FromJSON TransactionID
   where
     parseJSON (String txid) = return $ TransactionID txid
+    parseJSON _ = mzero
+
+instance FromJSON BlockHash
+  where
+    parseJSON (String hash) = return $ BlockHash hash
     parseJSON _ = mzero
 
 instance FromJSON Transaction
@@ -189,6 +209,13 @@ instance FromJSON BitcoinAddressInfo
                                 (fromMaybe False <$> o .:? "ismine")
     parseJSON _ = mzero
 
+instance FromJSON SinceBlockInfo
+  where
+    parseJSON (Object o) = SinceBlockInfo <$>
+                            o .: "transactions" <*>
+                            o .: "lastblock"
+    parseJSON _ = mzero
+
 instance FromJSON RPCResult
   where
     parseJSON (Object o) = case H.lookup "result" o of
@@ -206,3 +233,6 @@ txidAsByteString = E.encodeUtf8 . btcTxID
 
 addressAsByteString :: BitcoinAddress -> B.ByteString
 addressAsByteString = E.encodeUtf8 . btcAddress
+
+blockHashAsByteString :: BlockHash -> B.ByteString
+blockHashAsByteString = E.encodeUtf8 . btcBlockHash

@@ -2,6 +2,7 @@
 module Main where
 
 import Control.Monad
+import System.Environment
 import Test.Framework
 import Test.Framework.Providers.HUnit
 import Test.HUnit hiding (Test)
@@ -10,8 +11,12 @@ import Network.BitcoinRPC
 import Network.BitcoinRPC.EventsTest
 import Network.BitcoinRPC.MarkerAddressesTest
 
+includeMoneyTests = False
+
 auth :: RPCAuth
 auth = RPCAuth "http://127.0.0.1:8332" "rpcuser" "localaccessonly"
+
+genesisBlockHash = BlockHash "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
 
 test1 :: Test
 test1 = testCase "getblockcount" $ do
@@ -19,8 +24,10 @@ test1 = testCase "getblockcount" $ do
     return ()
 
 test2 :: Test
-test2 = testCase "listreceivedsince" $ do
-    _ <- listReceivedSinceR Nothing auth 0
+test2 = testCase "getblockhash" $ do
+    hash <- getBlockHashR Nothing auth 0
+    assertEqual "Hash of genesis block is not returned correctly."
+                    genesisBlockHash hash
     return ()
 
 test3 :: Test
@@ -44,8 +51,8 @@ test5 = testCase "getnewaddress" $ do
 
 test6 :: Test
 test6 = testCase "getbalance" $ do
-    b1 <- getBalanceR Nothing auth 0 False
-    b2 <- getBalanceR Nothing auth 6 False
+    b1 <- getBalanceR Nothing auth 0
+    b2 <- getBalanceR Nothing auth 6
     when (b1 < b2) $
         assertFailure "getbalance reports less unconfirmed funds\
                       \ than confirmed ones (?)"
@@ -85,10 +92,23 @@ test8 = testCase "sendtoaddress (1)" $ do
         _ -> assertFailure "insufficient funds are not detected"
 
 test9 :: Test
-test9 = testCase "sendtoaddress (2)" $ do
-    let smallAmount = BitcoinAmount 1000000
-        fee = BitcoinAmount 50000
-    b <- getBalanceR Nothing auth 1 True
+test9 = testCase "listsinceblock (1)" $ do
+    _ <- listSinceBlockR Nothing auth Nothing
+    return ()
+
+--test10 :: Test
+--test10 = testCase "getbalance, filtered marker coins" $ do
+--    b1 <- getBalanceR Nothing auth 0 False
+--    b2 <- getBalanceR Nothing auth 0 True
+--    when (b1 < b2) $
+--        assertFailure "the balance without marker coins is\
+--                      \ less than the total balance (?)"
+
+testA :: Test
+testA = testCase "sendtoaddress (2)" $ do
+    let smallAmount = BitcoinAmount 10000
+        fee = BitcoinAmount 10000
+    b <- getBalanceR Nothing auth 1
     myAddr <- getNewAddressR Nothing auth
     when (b >= smallAmount + fee) $ do
         s <- sendToAddress auth myAddr smallAmount
@@ -97,28 +117,27 @@ test9 = testCase "sendtoaddress (2)" $ do
             _ -> assertFailure "sendtoaddress failed, even though\
                                \ sufficient funds should be available"
 
-test10 :: Test
-test10 = testCase "getbalance, filtered marker coins" $ do
-    b1 <- getBalanceR Nothing auth 0 False
-    b2 <- getBalanceR Nothing auth 0 True
-    when (b1 < b2) $
-        assertFailure "the balance without marker coins is\
-                      \ less than the total balance (?)"
-
 main :: IO ()
-main = defaultMain tests
+main = do
+    tests <- if includeMoneyTests
+                then return $ freeTests ++ moneyTests
+                else putStrLn "Omitting some tests - set includeMoneyTests\
+                              \ in TestSuite.hs for full test suite."
+                     >> return freeTests
+    defaultMain tests
 
-tests :: [Test]
-tests = [ test1
-        , test2
-        , test3
-        , test4
-        , test5
-        , test6
-        , test7
-        , test8
-        , test9
-        , test10
-        ] ++
-        eventsTests
-        ++ markerAdressesTests
+freeTests :: [Test]
+freeTests = [ test1
+            , test2
+            , test3
+            , test4
+            , test5
+            , test6
+            , test7
+            , test8
+            , test9
+            ] ++
+            eventsTests
+            ++ markerAdressesTests
+
+moneyTests = [ testA ]
