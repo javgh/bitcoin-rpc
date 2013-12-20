@@ -26,13 +26,12 @@ module Network.BitcoinRPC.Events
     , EventTaskState
     , BitcoinEventTaskHandle
 #if !PRODUCTION
-    , LRSCheckpoint(..)
+    , LSBCheckpoint(..)
     , determineNewTransactions
 #endif
     ) where
 
 import Control.Concurrent
-import Control.Exception
 import Control.Watchdog
 import Data.Serialize
 import GHC.Generics
@@ -43,15 +42,10 @@ import qualified Data.Map as M
 
 import Network.BitcoinRPC
 
--- | Number of confirmations until we can be sure, that
--- the time field of a transaction does not change anymore.
-lrsCheckpointConfirmations :: Integer
-lrsCheckpointConfirmations = 100
-
--- | Approximate time it takes to accumlate the number of confirmations
--- specified in 'lrsCheckpointConfirmations'.
-lrsCheckpointInterval :: Integer
-lrsCheckpointInterval = lrsCheckpointConfirmations * 10 * 60
+-- | How deep in the block chain does a block need to be so that it
+-- is considered final - i.e. will not change because of a re-org.
+lsbBlockDepth :: Integer
+lsbBlockDepth = 100
 
 data BitcoinEventTaskHandle = BitcoinEventTaskHandle
                                 { bethChan ::
@@ -67,17 +61,17 @@ data UniqueTransactionID = UniqueTransactionID { uTxID :: TransactionID
                                                }
                            deriving (Eq, Ord, Show, Read, Generic)
 
--- | Keep track on how we need to call 'listreceivedsince' next to get
+-- | Keep track on how we need to call 'listsinceblock' next to get
 -- everything new that happened.
-data LRSCheckpoint = LRSCheckpoint { lrsTimestamp :: Integer
-                                   , lrsKnownTxIDs :: [TransactionID]
+data LSBCheckpoint = LSBCheckpoint { lsbBlockHash :: Maybe BlockHash
+                                   , lsbKnownTxIDs :: [TransactionID]
                                    }
                      deriving (Eq,Show,Read,Generic)
 
 -- | Keeps track of confirmation count for recent unique transactions.
 type UTXPool = M.Map UniqueTransactionID Integer
 
-data EventTaskState = EventTaskState { etsLRSCheckpoint :: LRSCheckpoint
+data EventTaskState = EventTaskState { etsLSBCheckpoint :: LSBCheckpoint
                                      , etsPool :: UTXPool
                                      }
                       deriving (Show,Generic)
@@ -95,13 +89,13 @@ data BitcoinEvent = NewTransaction { beUTxID :: UniqueTransactionID
 
 instance Serialize UniqueTransactionID
 
-instance Serialize LRSCheckpoint
+instance Serialize LSBCheckpoint
 
 instance Serialize EventTaskState
 
 initialEventTaskState :: EventTaskState
-initialEventTaskState = EventTaskState { etsLRSCheckpoint =
-                                            LRSCheckpoint 0 []
+initialEventTaskState = EventTaskState { etsLSBCheckpoint =
+                                            LSBCheckpoint Nothing []
                                        , etsPool = M.empty
                                        }
 
@@ -113,14 +107,14 @@ onlyReceive ReceiveTx{} = True
 onlyReceive _ = False
 
 getNewBitcoinEvents :: Maybe WatchdogLogger-> RPCAuth-> (TransactionHeader -> Bool)-> EventTaskState-> IO (EventTaskState, [BitcoinEvent])
-getNewBitcoinEvents mLogger auth acceptTest (EventTaskState lrsCheckpoint utxPool) = do
-    (lrsCheckpoint', newTxs) <- getNewTransactions mLogger auth lrsCheckpoint
+getNewBitcoinEvents mLogger auth acceptTest (EventTaskState lsbCheckpoint utxPool) = do
+    (lsbCheckpoint', newTxs) <- getNewTransactions mLogger auth lsbCheckpoint
     let newReceiveTxs = filter onlyReceive newTxs
         newPoolEntries = map (\tx -> (getUniqueTransactionID tx, 0)) newReceiveTxs
         utxPool' = utxPool `M.union` M.fromList newPoolEntries
     appearingEvents <- mapM (augmentNewTransaction mLogger auth) newReceiveTxs
     (utxPool'', updateEvents) <- updatePool mLogger auth acceptTest utxPool'
-    let newState = EventTaskState lrsCheckpoint' utxPool''
+    let newState = EventTaskState lsbCheckpoint' utxPool''
     return (newState, appearingEvents ++ updateEvents)
 
 updatePool :: Maybe WatchdogLogger-> RPCAuth-> (TransactionHeader -> Bool)-> M.Map UniqueTransactionID Integer-> IO (M.Map UniqueTransactionID Integer, [BitcoinEvent])
@@ -155,51 +149,28 @@ augmentNewTransaction mLogger auth tx = do
         Just txOrigins -> NewTransaction utxid tx (toOrigins txOrigins)
         Nothing -> NewTransaction utxid tx []
 
-getNewTransactions :: Maybe WatchdogLogger -> RPCAuth -> LRSCheckpoint -> IO (LRSCheckpoint, [Transaction])
-getNewTransactions mLogger auth lrsCheckpoint = do
-    txs <- listReceivedSinceR mLogger auth (lrsTimestamp lrsCheckpoint)
-    let ascendingTxs = assertAscending txs
-    return $ determineNewTransactions lrsCheckpoint ascendingTxs
+getNewTransactions :: Maybe WatchdogLogger -> RPCAuth -> LSBCheckpoint -> IO (LSBCheckpoint, [Transaction])
+getNewTransactions mLogger auth lsbCheckpoint = do
+    -- get (possibly) new transactions
+    SinceBlockInfo txs _ <- listSinceBlockR mLogger auth (lsbBlockHash lsbCheckpoint)
+    -- pick a block somewhat deep in the blockchain for the next query
+    blockCount <- getBlockCountR mLogger auth
+    let safeBlockHeight = max 0 (blockCount - lsbBlockDepth)
+    safeBlockHash <- getBlockHashR mLogger auth safeBlockHeight
+    let lsbCheckpoint' = lsbCheckpoint { lsbBlockHash = Just safeBlockHash }
+    return $ determineNewTransactions lsbCheckpoint' txs
 
--- | Figure out which are actual new transactions and decide on a new
--- checkpoint. Since timestamps of recent transactions can still change, the
--- checkpoint needs to be some time in the past. Also, transactions might be
--- lingering unconfirmed for a long time, so the checkpoint needs to be at least
--- as far in the past as these unconfirmed transactions.
-determineNewTransactions :: LRSCheckpoint -> [Transaction]-> (LRSCheckpoint, [Transaction])
-determineNewTransactions (LRSCheckpoint timestamp _) [] =
-    (LRSCheckpoint timestamp [], [])
-determineNewTransactions (LRSCheckpoint timestamp knownTxIDs) txList =
+-- | Figure out which are actual new transactions and update
+-- pool of known transaction ids. We simply keep the current list of
+-- transactions returned by listsinceblock and check against it the next time.
+-- This should work, as long as transactions never reappear after the have
+-- dropped of the list. This should be true, as long as blockcount is always
+-- increasing.
+determineNewTransactions :: LSBCheckpoint -> [Transaction] -> (LSBCheckpoint, [Transaction])
+determineNewTransactions (LSBCheckpoint mBlockHash knownTxIDs) txList =
     let newTransactions = filter (\tx -> tTxid tx `notElem` knownTxIDs) txList
-        youngTxs = filter (\tx -> tConfirmations tx < lrsCheckpointConfirmations) txList
-        -- Select a new possible checkpoint. Difficulty: We do not know what
-        -- time is 'now', we can only estimate it from the available
-        -- transactions.
-        -- We would like to pick a checkpoint which is:
-        --   a) not earlier than the old checkpoint
-        --   b) at least some time in the past compared to 'now'
-        --   c) includes all lingering (< 100 confs) transactions, so we can
-        --      get updates on them on future listreceivedsince calls
-        --   d) not unnecessary far into the past to keep knownTxIDs small
-        candidateD = tTime (last txList) + 1
-        safeCandidate = candidateD
-        candidateC = if not (null youngTxs)
-                        then tTime (head youngTxs)
-                        else safeCandidate
-        candidateB = if not (null youngTxs)
-                        then tTime (last youngTxs) - lrsCheckpointInterval
-                        else safeCandidate
-        candidateBCD = (min (min candidateB candidateC) candidateD) -- earliest
-        newTimestamp = max timestamp candidateBCD   -- not earlier than old one
-    in (LRSCheckpoint newTimestamp (map tTxid txList), newTransactions)
-
-assertAscending :: [Transaction] -> [Transaction]
-assertAscending [] = []
-assertAscending txList =
-    let times = map tTime txList
-        pairs = zip times (tail times)
-        isAscending = all (uncurry (<=)) pairs
-    in assert isAscending txList
+        knownTxIDs' = map tTxid txList
+    in ((LSBCheckpoint mBlockHash knownTxIDs'), newTransactions)
 
 setupBitcoinNotifcation :: FilePath -> IO (MVar ())
 setupBitcoinNotifcation path = do
@@ -250,5 +221,3 @@ waitForBitcoinEvents betHandle = readChan (bethChan betHandle)
 
 killBitcoinEventTask :: BitcoinEventTaskHandle -> IO ()
 killBitcoinEventTask betHandle = killThread (bethThreadId betHandle)
-
-listReceivedSinceR = undefined
