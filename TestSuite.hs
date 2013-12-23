@@ -96,6 +96,13 @@ test9 = testCase "listsinceblock (1)" $ do
     _ <- listSinceBlockR Nothing auth Nothing
     return ()
 
+test10 :: Test
+test10 = testCase "getrawtransaction" $ do
+    r <- getRawTransactionR Nothing auth (TransactionID "deadc0de")
+    case r of
+        Just _ -> assertFailure "invalid transaction id was not rejected"
+        Nothing -> return ()
+
 --test10 :: Test
 --test10 = testCase "getbalance, filtered marker coins" $ do
 --    b1 <- getBalanceR Nothing auth 0 False
@@ -136,6 +143,7 @@ freeTests = [ test1
             , test7
             , test8
             , test9
+            , test10
             ] ++
             eventsTests
             ++ markerAdressesTests

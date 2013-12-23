@@ -4,6 +4,7 @@ module Network.BitcoinRPC
     , getBlockHashR
     , listSinceBlockR
     , getTransactionR
+    , getRawTransactionR
     , getOriginsR
     , getNewAddressR
     , getBalanceR
@@ -25,10 +26,11 @@ import Network.HTTP
 import Network.URI
 import Text.Printf
 
-import qualified Data.ByteString as B
-import qualified Data.ByteString.Char8 as B8
 import qualified Control.Exception as E
 import qualified Data.Attoparsec as AP
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as B8
+import qualified Data.Text as T
 
 import Network.BitcoinRPC.Types
 
@@ -180,6 +182,17 @@ getTransactionR mLogger auth txid = do
     case v of
         Just v' -> Just <$> parseReply "gettransaction" v'
                                 :: IO (Maybe TransactionHeader)
+        Nothing -> return Nothing
+
+getRawTransactionR :: Maybe WatchdogLogger-> RPCAuth -> TransactionID -> IO (Maybe T.Text)
+getRawTransactionR mLogger auth txid = do
+    let params = "[\"" `B.append` txidAsByteString txid `B.append` "\"]"
+        conceivableError = errorCodeInvalidTransactionID
+    v <- reliableApiCall mLogger $
+            callApiFiltered auth "getrawtransaction" params conceivableError
+    case v of
+        Just v' -> Just <$> parseReply "getrawtransaction" v'
+                                :: IO (Maybe T.Text)
         Nothing -> return Nothing
 
 getOriginsR :: Maybe WatchdogLogger-> RPCAuth -> TransactionID -> IO (Maybe TransactionOrigins)
