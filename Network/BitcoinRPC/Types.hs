@@ -8,6 +8,7 @@ module Network.BitcoinRPC.Types
     , Transaction(..)
     , TransactionHeader(..)
     , TransactionOrigins(..)
+    , SerializedTransaction(..)
     , BitcoinAddressInfo(..)
     , SinceBlockInfo(..)
     , RPCResult(..)
@@ -39,6 +40,10 @@ newtype BitcoinAddress = BitcoinAddress { btcAddress :: T.Text }
 
 newtype TransactionID = TransactionID { btcTxID :: T.Text }
                         deriving (Eq,Ord,Show,Read)
+
+newtype SerializedTransaction = SerializedTransaction
+                                    { btcSerializedTx :: T.Text }
+                                deriving (Eq,Ord,Show,Read)
 
 newtype BlockHash = BlockHash { btcBlockHash :: T.Text }
                     deriving (Eq,Ord,Show,Read)
@@ -117,6 +122,10 @@ instance Serialize TransactionID where
     put = put . T.unpack . btcTxID
     get = TransactionID . T.pack <$> get
 
+instance Serialize SerializedTransaction where
+    put = put . T.unpack . btcSerializedTx
+    get = SerializedTransaction . T.pack <$> get
+
 instance Serialize Transaction
 
 instance Serialize BlockHash where
@@ -147,6 +156,11 @@ instance FromJSON BitcoinAddress
 instance FromJSON TransactionID
   where
     parseJSON (String txid) = return $ TransactionID txid
+    parseJSON _ = mzero
+
+instance FromJSON SerializedTransaction
+  where
+    parseJSON (String tx) = return $ SerializedTransaction tx
     parseJSON _ = mzero
 
 instance FromJSON BlockHash

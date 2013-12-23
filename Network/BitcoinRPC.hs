@@ -30,7 +30,6 @@ import qualified Control.Exception as E
 import qualified Data.Attoparsec as AP
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as B8
-import qualified Data.Text as T
 
 import Network.BitcoinRPC.Types
 
@@ -184,7 +183,7 @@ getTransactionR mLogger auth txid = do
                                 :: IO (Maybe TransactionHeader)
         Nothing -> return Nothing
 
-getRawTransactionR :: Maybe WatchdogLogger-> RPCAuth -> TransactionID -> IO (Maybe T.Text)
+getRawTransactionR :: Maybe WatchdogLogger-> RPCAuth -> TransactionID -> IO (Maybe SerializedTransaction)
 getRawTransactionR mLogger auth txid = do
     let params = "[\"" `B.append` txidAsByteString txid `B.append` "\"]"
         conceivableError = errorCodeInvalidTransactionID
@@ -192,7 +191,7 @@ getRawTransactionR mLogger auth txid = do
             callApiFiltered auth "getrawtransaction" params conceivableError
     case v of
         Just v' -> Just <$> parseReply "getrawtransaction" v'
-                                :: IO (Maybe T.Text)
+                                :: IO (Maybe SerializedTransaction)
         Nothing -> return Nothing
 
 getOriginsR :: Maybe WatchdogLogger-> RPCAuth -> TransactionID -> IO (Maybe TransactionOrigins)
