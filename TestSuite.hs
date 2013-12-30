@@ -51,8 +51,8 @@ test5 = testCase "getnewaddress" $ do
 
 test6 :: Test
 test6 = testCase "getbalance" $ do
-    b1 <- getBalanceR Nothing auth 0
-    b2 <- getBalanceR Nothing auth 6
+    b1 <- getBalanceR Nothing auth 0 True
+    b2 <- getBalanceR Nothing auth 6 True
     when (b1 < b2) $
         assertFailure "getbalance reports less unconfirmed funds\
                       \ than confirmed ones (?)"
@@ -103,19 +103,19 @@ test10 = testCase "getrawtransaction" $ do
         Just _ -> assertFailure "invalid transaction id was not rejected"
         Nothing -> return ()
 
---test10 :: Test
---test10 = testCase "getbalance, filtered marker coins" $ do
---    b1 <- getBalanceR Nothing auth 0 False
---    b2 <- getBalanceR Nothing auth 0 True
---    when (b1 < b2) $
---        assertFailure "the balance without marker coins is\
---                      \ less than the total balance (?)"
+test11 :: Test
+test11 = testCase "getbalance, filtered green coins" $ do
+    b1 <- getBalanceR Nothing auth 0 False
+    b2 <- getBalanceR Nothing auth 0 True
+    when (b1 < b2) $
+        assertFailure "the balance without green coins is\
+                      \ less than the total balance (?)"
 
 testA :: Test
 testA = testCase "sendtoaddress (2)" $ do
     let smallAmount = BitcoinAmount 10000
         fee = BitcoinAmount 10000
-    b <- getBalanceR Nothing auth 1
+    b <- getBalanceR Nothing auth 1 True
     myAddr <- getNewAddressR Nothing auth
     when (b >= smallAmount + fee) $ do
         s <- sendToAddress auth myAddr smallAmount
@@ -144,6 +144,7 @@ freeTests = [ test1
             , test8
             , test9
             , test10
+            , test11
             ] ++
             eventsTests
             ++ markerAdressesTests

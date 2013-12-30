@@ -210,9 +210,12 @@ getNewAddressR mLogger auth = do
     v <- reliableApiCall mLogger $ callApi auth "getnewaddress" "[]"
     parseReply "getnewaddress" v :: IO BitcoinAddress
 
-getBalanceR :: Maybe WatchdogLogger -> RPCAuth -> Integer -> IO BitcoinAmount
-getBalanceR mLogger auth minconf = do
-    let params = "[\"*\", " `B.append` (B8.pack . show) minconf  `B.append` "]"
+getBalanceR :: Maybe WatchdogLogger -> RPCAuth -> Integer -> Bool -> IO BitcoinAmount
+getBalanceR mLogger auth minconf filterGreenCoins = do
+    let params = "[\"*\", " `B.append` (B8.pack . show) minconf  `B.append`
+                    if filterGreenCoins
+                        then ", true]"
+                        else "]"
     v <- reliableApiCall mLogger $ callApi auth "getbalance" params
     parseReply "getbalance" v :: IO BitcoinAmount
 
