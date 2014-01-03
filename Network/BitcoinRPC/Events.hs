@@ -1,5 +1,16 @@
 {-# LANGUAGE DeriveGeneric #-}
 -- |
+-- This module provides a mechanism by which a client of the library can
+-- subscribe to new incoming Bitcoin transactions. To facilitate this, the
+-- library requires an external tool to send USR1 or USR2 signals whenever
+-- wallet activity takes place. The library will write its process id to a
+-- provided file for this purpose. An external tool like PidNotifier (
+-- <https://github.com/javgh/PidNotifier> ) can then be used in combination with
+-- the -walletnotify feature of the Satoshi Bitcoin daemon to notify the
+-- library. The library will then use commands like listsinceblock and an
+-- internal state to figure out which transactions are new, if any, and provide
+-- those to the subscribed client.
+--
 -- How to use:
 --
 -- 1. Use 'initBitcoinEventTask' to start a thread which will listen for Bitcoin
@@ -14,6 +25,55 @@
 -- 'TransactionDisappeared'. Usually you will also receive 'TransactionUpdate'
 -- when the number of confirmations change, but these events might not be
 -- generated if you are catching up from an old state.
+--
+-- Example usage:
+--
+-- > module Main where
+-- >
+-- > import Control.Monad
+-- > import System.Environment
+-- > import System.Exit
+-- >
+-- > import Network.BitcoinRPC
+-- > import Network.BitcoinRPC.Events
+-- >
+-- > acceptTest :: TransactionHeader -> Bool
+-- > acceptTest txHeader = thConfirmations txHeader >= 3
+-- >
+-- > rpcAuth :: RPCAuth
+-- > rpcAuth = RPCAuth "http://127.0.0.1:8332" "rpcuser" "localaccessonly"
+-- >
+-- > main :: IO ()
+-- > main = do
+-- >     args <- getArgs
+-- >     progName <- getProgName
+-- >     when (null args) $ do
+-- >         putStrLn $ "Usage: " ++ progName ++ " <path to notify pid file>"
+-- >         exitFailure
+-- >     let pidfile = head args
+-- >
+-- >     betHandle <- initBitcoinEventTask Nothing rpcAuth pidfile
+-- >                                         acceptTest initialEventTaskState
+-- >     forever $ do
+-- >         (_, events) <- waitForBitcoinEvents betHandle
+-- >         mapM print events
+--
+-- Example output:
+--
+-- @
+-- NewTransaction {beUTxID = UniqueTransactionID {uTxID = TransactionID {btcTxID =
+-- "fc96f113e87a031de7d6e066613f216cfb18f37da9cade0c78cfd7a81272124e"}, uEntry =
+-- 0}, beTx = ReceiveTx {tEntry = 0, tAmount = BitcoinAmount {btcAmount = 20741},
+-- tAddress = BitcoinAddress {btcAddress = "1ATeVDCQHjEePi7R66ivSTpz3SdkbyCV2a"},
+-- tConfirmations = 1867, tTxid = TransactionID {btcTxID =
+-- "fc96f113e87a031de7d6e066613f216cfb18f37da9cade0c78cfd7a81272124e"}, tTime =
+-- 1387825867}, beOrigins = [BitcoinAddress {btcAddress =
+-- "1NhPxwJ6mCr5auoQzzqr4qVd1w65zzJw8r"}]}
+-- TransactionAccepted {beUTxID = UniqueTransactionID {uTxID = TransactionID
+-- {btcTxID = "fc96f113e87a031de7d6e066613f216cfb18f37da9cade0c78cfd7a81272124e"},
+-- uEntry = 0}}
+-- @
+--
 
 {-# LANGUAGE OverloadedStrings, CPP #-}
 module Network.BitcoinRPC.Events

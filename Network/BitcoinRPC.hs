@@ -1,3 +1,39 @@
+-- |
+-- This library offers a wrapper around the RPC api of the Satoshi Bitcoin
+-- daemon. It focuses on reliability and will automatically retry many of the
+-- actions (indicated by the R suffix) if that can be done safely.
+--
+-- This library is written against a slightly modified version of the Satoshi
+-- Bitcoin daemon which contains extra functionality required as part of the
+-- operation of the Bridgewalker server ( <https://www.bridgewalkerapp.com/> ).
+-- These patches can be found here:
+-- <https://github.com/javgh/bitcoin/tree/bw-deployment> . For the most part it
+-- should be compatible with a release version of the Satoshi Bitcoin daemon,
+-- but some of the tests of the test suite might fail.
+--
+-- The library contains a mechanism by which a client of the library can
+-- subscribe to new incoming Bitcoin transactions. See
+-- "Network.BitcoinRPC.Events" for details.
+--
+-- Example usage:
+--
+-- > module Main where
+-- >
+-- > import Network.BitcoinRPC
+-- >
+-- > rpcAuth :: RPCAuth
+-- > rpcAuth = RPCAuth "http://127.0.0.1:8332" "rpcuser" "localaccessonly"
+-- >
+-- > main :: IO ()
+-- > main = getBlockCountR Nothing rpcAuth >>= print
+--
+-- Example output:
+--
+-- @
+-- 278456
+-- @
+--
+
 {-# LANGUAGE OverloadedStrings #-}
 module Network.BitcoinRPC
     ( getBlockCountR
