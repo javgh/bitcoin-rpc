@@ -11,6 +11,9 @@ import Network.BitcoinRPC.Events.MarkerAddresses
 acceptTest :: TransactionHeader -> Bool
 acceptTest txHeader = thConfirmations txHeader >= 3
 
+rpcAuth :: RPCAuth
+rpcAuth = RPCAuth "http://127.0.0.1:8332" "rpcuser" "localaccessonly"
+
 main :: IO ()
 main = do
     args <- getArgs
@@ -22,7 +25,7 @@ main = do
 
     let maConfig = [(BitcoinAddress "1MAbwuYp8CPChJ1ua25tnEKXkfXTVqEoyg", 1000000)]
         fetState = updateMarkerAddresses initialFilteredEventTaskState maConfig
-    fbetHandle <- initFilteredBitcoinEventTask Nothing debugAuth pidfile
+    fbetHandle <- initFilteredBitcoinEventTask Nothing rpcAuth pidfile
                                                     acceptTest fetState
     loop fetState fbetHandle
 

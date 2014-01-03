@@ -10,6 +10,9 @@ import Network.BitcoinRPC.Events
 acceptTest :: TransactionHeader -> Bool
 acceptTest txHeader = thConfirmations txHeader >= 3
 
+rpcAuth :: RPCAuth
+rpcAuth = RPCAuth "http://127.0.0.1:8332" "rpcuser" "localaccessonly"
+
 main :: IO ()
 main = do
     args <- getArgs
@@ -19,7 +22,7 @@ main = do
         exitFailure
     let pidfile = head args
 
-    betHandle <- initBitcoinEventTask Nothing debugAuth pidfile
+    betHandle <- initBitcoinEventTask Nothing rpcAuth pidfile
                                         acceptTest initialEventTaskState
     forever $ do
         (_, events) <- waitForBitcoinEvents betHandle

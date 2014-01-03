@@ -11,9 +11,6 @@ module Network.BitcoinRPC
     , validateAddressR
     , sendToAddress
     , module Network.BitcoinRPC.Types
-    , debugAuth
-    , debugAddr
-    , debugAmount
     )
     where
 
@@ -44,15 +41,6 @@ errorCodeInsufficientFunds = -4
 
 errorCodeInvalidAmount :: Integer
 errorCodeInvalidAmount = -3
-
-debugAuth :: RPCAuth
-debugAuth = RPCAuth "http://127.0.0.1:8332" "rpcuser" "localaccessonly"
-
-debugAddr :: BitcoinAddress
-debugAddr = BitcoinAddress "19LT33L5fp1eUQK5uJjMMGAgiyrqMjX5ii"
-
-debugAmount :: BitcoinAmount
-debugAmount = BitcoinAmount (10 * 10 ^ (8 :: Integer))
 
 ioTry :: IO a -> IO (Either E.IOException a)
 ioTry = E.try
