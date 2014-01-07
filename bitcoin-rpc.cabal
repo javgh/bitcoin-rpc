@@ -1,5 +1,5 @@
 name:                bitcoin-rpc
-version:             0.5.0.0
+version:             0.5.0.1
 synopsis:            Library to communicate with the Satoshi Bitcoin daemon
 description:         See Network.BitcoinRPC for documentation.
 category:            Network, Bitcoin
